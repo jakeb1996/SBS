@@ -1,0 +1,137 @@
+import matplotlib.pyplot as plt
+import argparse, csv
+
+
+def main(resultsFile, toolName):
+    ELAPSED_TIME = []
+
+    config = {
+        'x-data-default': ELAPSED_TIME,
+        'x-label-default' : 'Elapsed Time (sec)',
+        'y-data-type-default' : int
+    }
+
+    plots = {
+ # plot configurations must appear in the order of the associated CSV columns       
+ # --- sample ---       
+ #       'plot_name' : {
+ #               ['x-data' : [],]
+ #               ['y-data-type' : float,]
+ #               ['x-label': 'X-axis label',]
+ #       
+ #               'y-data' : [],
+ #               'title' : 'Plot Title',
+ #               'y-label' : 'Y-axis label'
+ #       },
+ # --- end sample ---       
+        'number_threads' : {
+                'y-data' : [],
+                'title' : 'Number of Threads',
+                'y-label' : 'Thread Count'
+        },
+        'cpu_percent' : {
+                'y-data' : [],
+                'y-data-type' : float,
+                'title' : 'CPU Utilisation',
+                'y-label' : 'CPU Usage (>100% indicates more than one core)'
+        },
+        'mem_rss' : {
+                'y-data' : [],
+                'y-data-type' : float,
+                'title' : 'Resident Set Size (RSS) Memory Utilisation',
+                'y-label' : 'Resident Set Size (bytes)'
+        },
+        'mem_vms' : {
+                'y-data' : [],
+                'title' : 'Virtual Memory Size (VMS) Memory Utilisation',
+                'y-label' : 'Virtual Memory Size (bytes)'
+        },
+        'io_read_count' : {
+                'y-data' : [],
+                'title' : 'Disk IO Read Count',
+                'y-label' : 'Number of IO read operations'
+        },
+        'io_read_bytes' : {
+                'y-data' : [],
+                'title' : 'Disk IO Read Volume',
+                'y-label' : 'Volume of IO read operations (bytes)'
+        },
+        'io_write_count' : {
+                'y-data' : [],
+                'title' : 'Disk IO Write Count',
+                'y-label' : 'Number of IO write operations'
+        },
+        'io_write_bytes' : {
+                'y-data' : [],
+                'title' : 'Disk IO Write Volume',
+                'y-label' : 'Number of IO write operations (bytes)'
+        },
+        'child_process_count' : {
+                'y-data' : [],
+                'title' : 'Child Process Spawning',
+                'y-label' : 'Number of Child Processes'
+        }
+    }
+    
+    with open(resultsFile, 'r') as fcsv:
+        dataCsv = csv.reader(fcsv, delimiter=',')
+        dataCsv.next()
+        firstTime = None
+        
+        for row in dataCsv:
+            
+            # Elapsed time
+            if firstTime == None:
+                firstTime = row[0]
+            ELAPSED_TIME.append(float(row[0]) - float(firstTime))
+
+            i = 1 # skip zero as its the time (as above)
+            for plot in plots:
+                if 'y-data-type' in plots[plot]:
+                    plots[plot]['y-data'].append(plots[plot]['y-data-type'](row[i]))
+                else:
+                    plots[plot]['y-data'].append(config['y-data-type-default'](row[i]))
+                i += 1
+
+
+
+    # number of threads
+    for plot in plots:
+
+        fig = plt.figure()
+        fig = fig.add_subplot(111)
+        
+        # plot data
+        if 'x-data' in plots[plot]:
+            fig.plot(plots[plot]['x-data'], plots[plot]['y-data'])
+        else:
+            fig.plot(config['x-data-default'], plots[plot]['y-data'])
+
+        # plot title
+        if toolName == None:
+            fig.set_title(plots[plot]['title'])
+        else:
+            fig.set_title('%s : %s' % (toolName, plots[plot]['title']))
+            
+        # x axis label
+        if 'x-label' in plots[plot]:
+            fig.set_xlabel(plots[plot]['x-label'])
+        else:
+            fig.set_xlabel(config['x-label-default'])
+
+        # y axis label    
+        fig.set_ylabel(plots[plot]['y-label'])
+
+        # save to file
+        outFig = fig.get_figure()
+        outFig.savefig('%s_%s.png' % (resultsFile, plot))
+        del fig
+        #plt.show(block=False)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description = 'Plotter for the Software Benchmarking Script')
+    parser.add_argument('-f', help='Results file as input (in csv format)')
+    parser.add_argument('-t', help='Name of tool to appear in graph titles', default=None)
+    args = parser.parse_args()
+
+    main(args.f, args.t)
