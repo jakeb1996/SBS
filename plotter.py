@@ -3,6 +3,8 @@ import argparse, csv
 
 
 def main(resultsFile, toolName):
+    print 'Running for: %s\n' % toolName
+    
     ELAPSED_TIME = []
 
     config = {
@@ -12,7 +14,7 @@ def main(resultsFile, toolName):
     }
 
     plots = {
- # plot configurations must appear in the order of the associated CSV columns       
+ # plot configurations must appear in the order of the associated CSV columns      
  # --- sample ---       
  #       'plot_name' : {
  #               ['x-data' : [],]
@@ -24,7 +26,7 @@ def main(resultsFile, toolName):
  #               'y-label' : 'Y-axis label'
  #       },
  # --- end sample ---       
-        'number_threads' : {
+        'num_threads' : {
                 'y-data' : [],
                 'title' : 'Number of Threads',
                 'y-label' : 'Thread Count'
@@ -72,12 +74,19 @@ def main(resultsFile, toolName):
                 'y-label' : 'Number of Child Processes'
         }
     }
+
+    # due to dictionaries not being in order, we need to know the order the data appears and
+    # match it with the associated plot configuration above.
+    headerOrder = []
     
     with open(resultsFile, 'r') as fcsv:
         dataCsv = csv.reader(fcsv, delimiter=',')
-        dataCsv.next()
-        firstTime = None
+
+        # Set the headerOrder and remove the time column header
+        headerOrder = dataCsv.next()
+        del headerOrder[0]
         
+        firstTime = None
         for row in dataCsv:
             
             # Elapsed time
@@ -86,18 +95,15 @@ def main(resultsFile, toolName):
             ELAPSED_TIME.append(float(row[0]) - float(firstTime))
 
             i = 1 # skip zero as its the time (as above)
-            for plot in plots:
+            for plot in headerOrder:
                 if 'y-data-type' in plots[plot]:
                     plots[plot]['y-data'].append(plots[plot]['y-data-type'](row[i]))
                 else:
                     plots[plot]['y-data'].append(config['y-data-type-default'](row[i]))
                 i += 1
 
-
-
-    # number of threads
-    for plot in plots:
-
+    # start generating plots
+    for plot in headerOrder:
         fig = plt.figure()
         fig = fig.add_subplot(111)
         
@@ -124,10 +130,13 @@ def main(resultsFile, toolName):
 
         # save to file
         outFig = fig.get_figure()
-        outFig.savefig('%s_%s.png' % (resultsFile, plot))
+        outFigFileName = '%s_%s.png' % (resultsFile, plot)
+        outFig.savefig(outFigFileName)
+        print 'Wrote to: %s' % outFigFileName
         del fig
         #plt.show(block=False)
 
+    print '\nFinished.'
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Plotter for the Software Benchmarking Script')
     parser.add_argument('-f', help='Results file as input (in csv format)')
