@@ -38,7 +38,7 @@ def main(cmd, outFile, sleepTime, loggable):
         
         # Monitor process
         progressIndicator = 0
-        while p.is_running():
+        while p.is_running() and p.status() != psutil.STATUS_ZOMBIE and p.oneshot():
             mem = p.memory_info()
             io = p.io_counters()
             

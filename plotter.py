@@ -1,6 +1,11 @@
 import matplotlib.pyplot as plt
 import argparse, csv
 
+def cpuPercentToDecimal(val):
+    return (float(val) / 100.0)
+
+def byteToMegabyte(val):
+    return (float(val) / 1024.0 / 1024.0)
 
 def main(resultsFile, toolName):
     print 'Running for: %s\n' % toolName
@@ -20,6 +25,7 @@ def main(resultsFile, toolName):
  #               ['x-data' : [],]
  #               ['y-data-type' : float,]
  #               ['x-label': 'X-axis label',]
+ #               ['y-data-calc' : funcName,]
  #       
  #               'y-data' : [],
  #               'title' : 'Plot Title',
@@ -34,19 +40,22 @@ def main(resultsFile, toolName):
         'cpu_percent' : {
                 'y-data' : [],
                 'y-data-type' : float,
+                'y-data-calc' : cpuPercentToDecimal,
                 'title' : 'CPU Utilisation',
-                'y-label' : 'CPU Usage (>100% indicates more than one core)'
+                'y-label' : 'CPU Usage'
         },
         'mem_rss' : {
                 'y-data' : [],
                 'y-data-type' : float,
+                'y-data-calc' : byteToMegabyte,
                 'title' : 'Resident Set Size (RSS) Memory Utilisation',
-                'y-label' : 'Resident Set Size (bytes)'
+                'y-label' : 'Resident Set Size (megabytes)'
         },
         'mem_vms' : {
                 'y-data' : [],
                 'title' : 'Virtual Memory Size (VMS) Memory Utilisation',
-                'y-label' : 'Virtual Memory Size (bytes)'
+                'y-label' : 'Virtual Memory Size (megabytes)',
+                'y-data-calc' : byteToMegabyte,
         },
         'io_read_count' : {
                 'y-data' : [],
@@ -56,7 +65,8 @@ def main(resultsFile, toolName):
         'io_read_bytes' : {
                 'y-data' : [],
                 'title' : 'Disk IO Read Volume',
-                'y-label' : 'Volume of IO read operations (bytes)'
+                'y-label' : 'Volume of IO read operations (megabytes)',
+                'y-data-calc' : byteToMegabyte,
         },
         'io_write_count' : {
                 'y-data' : [],
@@ -66,7 +76,8 @@ def main(resultsFile, toolName):
         'io_write_bytes' : {
                 'y-data' : [],
                 'title' : 'Disk IO Write Volume',
-                'y-label' : 'Number of IO write operations (bytes)'
+                'y-label' : 'Number of IO write operations (megabytes)',
+                'y-data-calc' : byteToMegabyte,
         },
         'child_process_count' : {
                 'y-data' : [],
@@ -96,10 +107,15 @@ def main(resultsFile, toolName):
 
             i = 1 # skip zero as its the time (as above)
             for plot in headerOrder:
-                if 'y-data-type' in plots[plot]:
-                    plots[plot]['y-data'].append(plots[plot]['y-data-type'](row[i]))
+                if 'y-data-calc' in plots[plot]:
+                    yVal = plots[plot]['y-data-calc'](row[i])
                 else:
-                    plots[plot]['y-data'].append(config['y-data-type-default'](row[i]))
+                    yVal = row[i]
+                
+                if 'y-data-type' in plots[plot]:
+                    plots[plot]['y-data'].append(plots[plot]['y-data-type'](yVal))
+                else:
+                    plots[plot]['y-data'].append(config['y-data-type-default'](yVal))
                 i += 1
 
     # start generating plots
@@ -109,9 +125,9 @@ def main(resultsFile, toolName):
         
         # plot data
         if 'x-data' in plots[plot]:
-            fig.plot(plots[plot]['x-data'], plots[plot]['y-data'])
+            fig.plot(plots[plot]['x-data'], plots[plot]['y-data'], linewidth=1)
         else:
-            fig.plot(config['x-data-default'], plots[plot]['y-data'])
+            fig.plot(config['x-data-default'], plots[plot]['y-data'], linewidth=1)
 
         # plot title
         if toolName == None:
@@ -137,6 +153,7 @@ def main(resultsFile, toolName):
         #plt.show(block=False)
 
     print '\nFinished.'
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Plotter for the Software Benchmarking Script')
     parser.add_argument('-f', help='Results file as input (in csv format)')

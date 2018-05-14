@@ -12,7 +12,7 @@ def main(resultsFile, toolName):
 
     # the aggregate functions to perform on each set. each is a function name.
     # user-defined functions at bottom of file
-    stats = [len, min, q1, median, avg, q3, max]
+    stats = [len, min, q1, median, mean, q3, max, std]
 
     measurements = {
  # measurement configurations must appear in the order of the associated CSV columns      
@@ -111,14 +111,18 @@ def q1(seq):
 def median(seq):
     return numpy.percentile(seq, 50)
 
-def avg(seq):
+def mean(seq):
     return sum(seq) / len(seq)
 
 def q3(seq):
     return numpy.percentile(seq, 75)
 
+def std(seq):
+    return numpy.std(seq)
+
 def funcName(func):
     return func.__name__
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Plotter for the Software Benchmarking Script')
