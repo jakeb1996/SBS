@@ -28,7 +28,7 @@ def main(cmd, outFile, sleepTime, loggable):
         # Launch process
         print '\nLaunching process...'
         try:
-            p = psutil.Popen(cmd) #["python", "C:\git\SBS\hold.py"])
+            p = psutil.Popen(cmd.split(' ')) #["python", "C:\git\SBS\hold.py"])
         except Exception as e:
             print e
             print '\nFailed to launch process. Exiting.'
@@ -36,32 +36,70 @@ def main(cmd, outFile, sleepTime, loggable):
 
         print '\nProcess launched: %s' % (p)
         
-        # Monitor process
+        # Monitor process.
         progressIndicator = 0
-        while p.is_running() and p.status() != psutil.STATUS_ZOMBIE and p.oneshot():
-            mem = p.memory_info()
-            io = p.io_counters()
-            
-            f.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' % (
-                    time.time(), # current time
-                    p.num_threads(), # number of threads for p
-                    p.cpu_percent(interval=None), # >100% indicates multi-core
-                    mem.rss, # Resident Set Size (physical mem)
-                    mem.vms, # Virtual Memory Size (phy+vir mem),
-                    io.read_count,
-                    io.read_bytes,
-                    io.write_count,
-                    io.write_bytes,
-                    len(p.children()) # child processes
-                    ))
-            if loggable == 'y':
-                f.flush()
-                
-            # sleep for desired time
-            print '.' * ((progressIndicator) % 11)
-            progressIndicator += 1
-            time.sleep(sleepTime)
+        while p.is_running() and p.status() != psutil.STATUS_ZOMBIE:
+			measurements = []
+			with p.oneshot():
+				mem = p.memory_full_info()
+				io = p.io_counters()
 
+				measurements = [time.time(), # current time
+					p.num_threads(), # number of threads for p
+					p.cpu_percent(interval=0), # >100% indicates multi-core
+					mem.rss, # Resident Set Size (physical mem)
+					mem.vms, # Virtual Memory Size (phy+vir mem),
+					io.read_count,
+					io.read_bytes,
+					io.write_count,
+					io.write_bytes,
+					len(p.children())
+				]
+				
+				for child in p.children(recursive=True):
+					child = psutil.Process(child.pid)
+					if child.is_running() and child.status() != psutil.STATUS_ZOMBIE:
+						with child.oneshot():
+							# We will rought it with some hard code
+							print child.name
+							temp = measurements[2]
+							mem = child.memory_full_info()
+							io = child.io_counters()
+							print 'sys cpu: %s\n' % psutil.cpu_percent()
+							print 'child cpu: %s\n' % child.cpu_percent(interval=0)
+							measurements[1] = measurements[1] + child.num_threads()
+							measurements[2] = measurements[2] + child.cpu_percent(interval=0)
+							measurements[3] = measurements[3] + mem.rss
+							measurements[4] = measurements[4] + mem.vms
+							measurements[5] = measurements[5] + io.read_count
+							measurements[6] = measurements[6] + io.read_bytes
+							measurements[7] = measurements[7] + io.write_count
+							measurements[8] = measurements[8] + io.write_bytes
+							measurements[9] = measurements[9] + len(child.children())
+							print 'CPU before: %s\nCPU after: %s' % (temp, measurements[2])
+				
+				f.write('%s\n' % (','.join(map(str, measurements))))
+				
+				# f.write('%s\n' % () % (
+					# time.time(), # current time
+					# p.num_threads(), # number of threads for p
+					# p.cpu_percent(interval=0), # >100% indicates multi-core
+					# mem.rss, # Resident Set Size (physical mem)
+					# mem.vms, # Virtual Memory Size (phy+vir mem),
+					# io.read_count,
+					# io.read_bytes,
+					# io.write_count,
+					# io.write_bytes,
+					# len(p.children()) # child processes
+				# ))
+
+			if loggable == 'y':
+				f.flush()
+
+			# sleep for desired time
+			print '.' * ((progressIndicator) % 11)
+			progressIndicator += 1
+			time.sleep(sleepTime)
 
         print 'Process exited. Exiting.'
         
@@ -98,4 +136,3 @@ if __name__ == "__main__":
         
     sys.stdout = original
     fstd.close()
-
