@@ -7,7 +7,7 @@ def cpuPercentToDecimal(val):
 def byteToMegabyte(val):
     return (float(val) / 1024.0 / 1024.0)
 
-def main(resultsFile, toolName):
+def main(resultsFile, toolName, childProcessFile):
     print 'Running for: %s\n' % toolName
     
     ELAPSED_TIME = []
@@ -90,6 +90,7 @@ def main(resultsFile, toolName):
     # match it with the associated plot configuration above.
     headerOrder = []
     
+    firstTime = None
     with open(resultsFile, 'r') as fcsv:
         dataCsv = csv.reader(fcsv, delimiter=',')
 
@@ -97,9 +98,7 @@ def main(resultsFile, toolName):
         headerOrder = dataCsv.next()
         del headerOrder[0]
         
-        firstTime = None
         for row in dataCsv:
-            
             # Elapsed time
             if firstTime == None:
                 firstTime = row[0]
@@ -118,6 +117,16 @@ def main(resultsFile, toolName):
                     plots[plot]['y-data'].append(config['y-data-type-default'](yVal))
                 i += 1
 
+	# find child process start and end markers from file
+	childStartMarker = []
+	childEndMarker = []
+    if childProcessFile != None:
+        with open(childProcessFile, 'r') as fchpro:
+            dataCsv = csv.reader(fchpro, delimiter=',')
+            for row in dataCsv:
+                childStartMarker.append(float(row[1]) - float(firstTime))
+                childEndMarker.append(float(row[3]) - float(firstTime))
+	
     # start generating plots
     for plot in headerOrder:
         fig = plt.figure()
@@ -144,6 +153,12 @@ def main(resultsFile, toolName):
         # y axis label    
         fig.set_ylabel(plots[plot]['y-label'])
 
+		# draw on child process markers
+        markers = ['.', '^', '>', '<', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_']
+        for i in range(len(childStartMarker)):
+            fig.plot(childStartMarker[i], 0, color='g', marker=markers[i])
+            fig.plot(childEndMarker[i], 0, color='r', marker=markers[i])
+        
         # save to file
         outFig = fig.get_figure()
         outFigFileName = '%s_%s.png' % (resultsFile, plot)
@@ -156,8 +171,9 @@ def main(resultsFile, toolName):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Plotter for the Software Benchmarking Script')
-    parser.add_argument('-f', help='Results file as input (in csv format)')
+    parser.add_argument('-f', help='Results file as input (CSV)')
     parser.add_argument('-t', help='Name of tool to appear in graph titles', default=None)
+    parser.add_argument('-c', help='File containing child spawning data (CSV)', default=None)
     args = parser.parse_args()
 
-    main(args.f, args.t)
+    main(args.f, args.t, args.c)
