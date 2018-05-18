@@ -1,7 +1,6 @@
 import psutil, time, argparse, os, signal, sys
 from subprocess import PIPE
 
-
 MEASUREMENT_TYPE_INSTANT = 1
 MEASUREMENT_TYPE_CUMULATIVE = 2
 
@@ -47,7 +46,7 @@ class SbsProcess(psutil.Process):
         self.name = getProcessName(self._process)
    
     def updateMeasurements(self):
-        if self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE:
+        if self.isRunning():
             with self._process.oneshot():
                 mem = self._process.memory_info()
                 io = self._process.io_counters()
@@ -68,22 +67,28 @@ class SbsProcess(psutil.Process):
     def getMeasurementNamesList(self):
         return [m.name for m in self.measurements]
         
+    def isRunning(self):
+        if self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE:
+            return True
+        return False
         
 class SbsOutputRow():
-    def __init__(self, parentMeasurements):
+    def __init__(self, parent):
         # the output row should be initialised with some data.
         # this data is typically the data from the parent process.
         self._values = []
-        for measurement in parentMeasurements:
+        for measurement in parent.getMeasurements():
             self._values.append(measurement.lastValue)
 
-    def addChildData(self, childMeasurements):
+    def addChildData(self, child):
         # now we need to start add on values (whether that be the total used (in the case of IO counts) or lastValue (in the case of cpu usage))
         i = 0
-        for measurement in childMeasurements:
-            if measurement.type == MEASUREMENT_TYPE_INSTANT:
+        for measurement in child.getMeasurements():
+            # only add instantaneous measurements if the process is still running
+            if measurement.type == MEASUREMENT_TYPE_INSTANT and child.isRunning():
                 self._values[i] = self._values[i] + measurement.lastValue
             
+            # because the measurement is cumulative, we want to know its usage even after it has ended
             if measurement.type == MEASUREMENT_TYPE_CUMULATIVE:
                 self._values[i] = self._values[i] + measurement.cumulative
             i = i + 1
@@ -127,12 +132,14 @@ def main(cmd, outFile, sleepTime, loggable):
         firstFileWrite = True
         
         # make sure the parent is still running. if so, monitor it and its children.
-        while parentProcess.is_running() and parentProcess.status() != psutil.STATUS_ZOMBIE:
+        while parentProcess.isRunning():
 
             # find all children of parent (grandchildren too, etc)
             for child in parentProcess.children(recursive=True):
             
                 # make sure the child is still running and is not a zombie (for ubuntus sake)
+                # we cannot call SbsProcess.isRunning() because this is a native psutil class still,
+                # and not a SbsProcess. We will convert it soon.
                 if child.is_running() and child.status() != psutil.STATUS_ZOMBIE:
                 
                     # check to see if we've seen this child before
@@ -150,7 +157,7 @@ def main(cmd, outFile, sleepTime, loggable):
             
             # Now we need to achieve the following:
             #   - update the measurements for the parent process and all children
-            #   - using the parents data as a basis, start aggregating the measurements
+            #   - using the parents data as a basis, start aggregating with child measurements
             # To achieve this, we will use the handy SbsOutputRow class, which does the
             # work for us. See class implementation above.
             outputMeasurements = None
@@ -158,11 +165,11 @@ def main(cmd, outFile, sleepTime, loggable):
                 if outputMeasurements == None:
                     # for some reason, the first child is the parent process. start there.
                     parentProcess.updateMeasurements()
-                    outputMeasurements = SbsOutputRow(parentProcess.getMeasurements())
+                    outputMeasurements = SbsOutputRow(parentProcess)
                 else:
                     # now we've reached the children and grandchildren, keep going.
                     child.updateMeasurements()
-                    outputMeasurements.addChildData(child.getMeasurements())
+                    outputMeasurements.addChildData(child)
                     
             
             print '\n'
@@ -187,8 +194,8 @@ def main(cmd, outFile, sleepTime, loggable):
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Software Benchmarking Script3')
-    parser.add_argument('-c', help='Command to run', default=None)
-    parser.add_argument('-o', help='Output file name', default=None)
+    parser.add_argument('-c', help='Command to run', default=None, required=True)
+    parser.add_argument('-o', help='Output file name', default=None, required=True)
     parser.add_argument('-s', help='Time to sleep (sec) (default=1)', type=int, default=1)
     parser.add_argument('-l', help='Flush output buffer on each poll (allows output to be tail\'able) (y/n) (default=n)', type=str, default='n')
     args = parser.parse_args()
