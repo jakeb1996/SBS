@@ -111,9 +111,7 @@ IO write bytes
 
 	The filename is formatted as following:
 	
-`<o>_<start-time>_<c>__<measurement>.csv`
-
-*where `o` and `c` are the arguments you specified*
+`<o>_<start-time>_<c>__<measurement>.csv` *where `o` and `c` are the arguments you specified*
 
 	An example of this file is: 
 	
