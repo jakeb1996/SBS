@@ -1,16 +1,19 @@
-import psutil, time, argparse, os, signal, sys
+import psutil, time, argparse, os, signal, sys, re
 from subprocess import PIPE
 
 MEASUREMENT_TYPE_INSTANT = 1
 MEASUREMENT_TYPE_CUMULATIVE = 2
 
 class SbsMeasurement():
-    def __init__(self, inName, inType):
+    def __init__(self, inName, inType, outFileName=None):
         self.name = inName
         self.lastValue = 0
         self.delta = 0
         self.cumulative = 0
         self.type = inType # MEASUREMENT_TYPE_CUMULATIVE, MEASUREMENT_TYPE_INSTANT
+        
+        self._outFileName = outFileName
+        self._values = []
         
     def update(self, newValue):
         # even though some of this data may be meaningless for some measurements,
@@ -18,8 +21,19 @@ class SbsMeasurement():
         self.delta = newValue - self.lastValue
         self.lastValue = newValue
         self.cumulative = self.cumulative + self.delta
-
         
+        self._values.append(newValue)
+      
+    def __del__(self):
+        if self._outFileName != None:
+            try:
+                with open(self._outFileName, 'w+') as fcsv:
+                    fcsv.write('\n'.join(map(str, self._values)))
+            except Exception as e:
+                print e
+                print 'Failed to write to: %s' % self._outFileName
+            print 'Wrote to: %s' % (self._outFileName)
+                
 class SbsProcess(psutil.Process):
     # private
     _process = None
@@ -27,39 +41,60 @@ class SbsProcess(psutil.Process):
     # public
     name = None
 
-    def __init__(self, pid, *args, **kwargs):
+    def __init__(self, pid, outputMeasurementsToFile=True, *args, **kwargs):
         super(SbsProcess, self).__init__(*args, **kwargs)
         self._process = psutil.Process(pid)
-        
-        self.measurements = [
-            SbsMeasurement('num_threads', MEASUREMENT_TYPE_INSTANT),
-            SbsMeasurement('cpu_percent', MEASUREMENT_TYPE_INSTANT),
-            SbsMeasurement('mem_rss', MEASUREMENT_TYPE_INSTANT),
-            SbsMeasurement('mem_vms', MEASUREMENT_TYPE_INSTANT),
-            SbsMeasurement('io_read_count', MEASUREMENT_TYPE_CUMULATIVE),
-            SbsMeasurement('io_read_bytes', MEASUREMENT_TYPE_CUMULATIVE),
-            SbsMeasurement('io_write_count', MEASUREMENT_TYPE_CUMULATIVE),
-            SbsMeasurement('io_write_bytes', MEASUREMENT_TYPE_CUMULATIVE),
-            SbsMeasurement('child_process_count', MEASUREMENT_TYPE_INSTANT)
-        ]
-        
         self.name = getProcessName(self._process)
-   
+        self.measurements = []
+        
+        mName = [
+            'time',
+            'num_threads',
+            'cpu_percent',
+            'mem_rss',
+            'mem_vms',
+            'io_read_count',
+            'io_read_bytes',
+            'io_write_count',
+            'io_write_bytes',
+            'child_process_count'
+        ]
+        mType = [
+            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_CUMULATIVE,
+            MEASUREMENT_TYPE_CUMULATIVE,
+            MEASUREMENT_TYPE_CUMULATIVE,
+            MEASUREMENT_TYPE_CUMULATIVE,
+            MEASUREMENT_TYPE_INSTANT
+        ]
+
+        i = 0
+        while i < len(mName):
+            if outputMeasurementsToFile:
+                fileName = '%s_%s.csv' % (re.sub('[\\/:"*?<>|]+', '_', self.name.replace(' ', '_')), mName[i])
+            self.measurements.append(SbsMeasurement(mName[i], mType[i], fileName))
+            i = i + 1
+
     def updateMeasurements(self):
         if self.isRunning():
             with self._process.oneshot():
                 mem = self._process.memory_info()
                 io = self._process.io_counters()
                 
-                self.measurements[0].update(self._process.num_threads())
-                self.measurements[1].update(self._process.cpu_percent())
-                self.measurements[2].update(mem.rss)
-                self.measurements[3].update(mem.vms)
-                self.measurements[4].update(io.read_count)
-                self.measurements[5].update(io.read_bytes)
-                self.measurements[6].update(io.write_count)
-                self.measurements[7].update(io.write_bytes)
-                self.measurements[8].update(len(self._process.children()))
+                self.measurements[0].update(time.time())
+                self.measurements[1].update(self._process.num_threads())
+                self.measurements[2].update(self._process.cpu_percent())
+                self.measurements[3].update(mem.rss)
+                self.measurements[4].update(mem.vms)
+                self.measurements[5].update(io.read_count)
+                self.measurements[6].update(io.read_bytes)
+                self.measurements[7].update(io.write_count)
+                self.measurements[8].update(io.write_bytes)
+                self.measurements[9].update(len(self._process.children()))
 
     def getMeasurements(self):
         return self.measurements
@@ -71,6 +106,47 @@ class SbsProcess(psutil.Process):
         if self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE:
             return True
         return False
+
+    def getPid(self):
+        return self._process.pid
+        
+    def __del__(self):
+        for m in self.measurements:
+            del m
+        print 'SbsProcess deconstructor triggered: %s ' % self.name   
+        
+class SbsProcessHandlerClass():
+    # there should only be one instance of this class (why doesn't python support static classes)
+    def __init__(self, parentPid):
+        self._parent = SbsProcess(parentPid)
+        self._children = []
+    
+    def addChild(self, childPid):
+        self._children.append(SbsProcess(childPid))
+    
+    def getChildren(self):
+        return self._children
+    
+    def getParent(self):
+        return self._parent
+    
+    def __del__(self):
+        if len(self.getChildren()) > 0:
+            print '\nDeleting children SbsProcess...'
+            for child in self.getChildren():
+                print child.getPid()
+                try:
+                    del child
+                except Exception as e:
+                    print e
+                    print 'Failed to end a child SbsProcess...'
+    
+        print '\nDeleting parent SbsProcess...'
+        try:
+            del self._parent
+        except Exception as e:
+            print e
+            print 'Failed to end parent SbsProcess...'
         
 class SbsOutputRow():
     def __init__(self, parent):
@@ -95,7 +171,7 @@ class SbsOutputRow():
             
     def toCsv(self):
         # we also want the time of this
-        return '%s,%s\n' % (time.time(), ','.join(map(str, self._values)))
+        return '%s' % (','.join(map(str, self._values)))
     
     def getValues(self):
         return self._values
@@ -106,6 +182,7 @@ def getProcessName(objPsutilProcess):
 
 	
 def main(cmd, outFile, sleepTime, loggable):
+    global SbsProcessHandler
     # check if file exists. It'd be terrible to overwrite experiment data.
     if os.path.exists(outFile):
         if raw_input('Output file exists. Overwrite? (y/n): ') == 'n':
@@ -113,16 +190,27 @@ def main(cmd, outFile, sleepTime, loggable):
             quit()   
 
     try:
-        # using psutil, start the process. then hand it to an SbsProcess object.
+        # using psutil, start the process. 
         parentProcess = psutil.Popen(cmd.split(' '))
-        parentProcess = SbsProcess(parentProcess.pid)
     except Exception as e:
         # oops, something went wrong.
         print e
         print '\nFailed to launch process. Exiting.'
         quit()
     
-    print 'Parent process launched.\n'
+    try:
+        # now that the parent process has started, lets have the SbsProcessHandler take control.
+        # this is globally declared so that we can safely destroy everything when needed.
+        SbsProcessHandler = SbsProcessHandlerClass(parentProcess.pid)
+        print 'SbsProcessHandler Parent ID: %s ' % SbsProcessHandler.getParent().getPid()
+    except Exception as e:
+        print e
+        print '\n Failed to create SbsProcessHandler object. Exiting.'
+        quit()
+    # There was no issues creating the handler. Destroy the parentProcess variable now so it isn't accidentally used.
+    del parentProcess
+    
+    print 'SBS Process Handler started...\n'
     
     # start monitoring. open output file to write to.
     with open(outFile, 'w+') as fData:
@@ -132,20 +220,20 @@ def main(cmd, outFile, sleepTime, loggable):
         firstFileWrite = True
         
         # make sure the parent is still running. if so, monitor it and its children.
-        while parentProcess.isRunning():
+        while SbsProcessHandler.getParent().isRunning():
 
             # find all children of parent (grandchildren too, etc)
-            for child in parentProcess.children(recursive=True):
-            
-                # make sure the child is still running and is not a zombie (for ubuntus sake)
+
+            for child in SbsProcessHandler.getParent().children(recursive=True):
+                # make sure the child is still running and is not a zombie
                 # we cannot call SbsProcess.isRunning() because this is a native psutil class still,
-                # and not a SbsProcess. We will convert it soon.
-                if child.is_running() and child.status() != psutil.STATUS_ZOMBIE:
+                # and not a SbsProcess. We will convert it soon. (instead, use the psutil.Process.is_running() method)
+                if child.is_running() and child.status() != psutil.STATUS_ZOMBIE and child.pid != SbsProcessHandler.getParent().getPid():
                 
                     # check to see if we've seen this child before
                     seenChildAlready = False
                     
-                    for existChild in childProcessHistory:
+                    for existChild in SbsProcessHandler.getChildren():
                         if existChild.name == getProcessName(child):
                             # we have, don't worry about it. move onto next child.
                             seenChildAlready = True
@@ -153,31 +241,26 @@ def main(cmd, outFile, sleepTime, loggable):
                             
                     # only reach here if we have not seen the child yet. make a record of it
                     if seenChildAlready == False:
-                        childProcessHistory.append(SbsProcess(child.pid))
+                        SbsProcessHandler.addChild(child.pid)
             
             # Now we need to achieve the following:
             #   - update the measurements for the parent process and all children
             #   - using the parents data as a basis, start aggregating with child measurements
             # To achieve this, we will use the handy SbsOutputRow class, which does the
             # work for us. See class implementation above.
-            outputMeasurements = None
-            for child in childProcessHistory:
-                if outputMeasurements == None:
-                    # for some reason, the first child is the parent process. start there.
-                    parentProcess.updateMeasurements()
-                    outputMeasurements = SbsOutputRow(parentProcess)
-                else:
-                    # now we've reached the children and grandchildren, keep going.
-                    child.updateMeasurements()
-                    outputMeasurements.addChildData(child)
+            SbsProcessHandler.getParent().updateMeasurements()
+            outputMeasurements = SbsOutputRow(SbsProcessHandler.getParent())
+
+            for child in SbsProcessHandler.getChildren():
+                child.updateMeasurements()
+                outputMeasurements.addChildData(child)
                     
-            
-            print '\n'
             print outputMeasurements.toCsv()
+            
             # monitoring of parent and children complete for this iteration. write data to file.
             if firstFileWrite == True:
                 # write CSV headers
-                fData.write('time,%s\n' % (','.join(parentProcess.getMeasurementNamesList())))
+                fData.write('%s\n' % (','.join(SbsProcessHandler.getParent().getMeasurementNamesList())))
                 firstFileWrite = False
                 
             fData.write(outputMeasurements.toCsv())
@@ -192,7 +275,11 @@ def main(cmd, outFile, sleepTime, loggable):
         # seems like the parent process has ended.
         print 'Parent process ended (or became a zombie). Exiting.'
         
+        print '\n\nStarting cleanup...'
+        
+        
 if __name__ == "__main__":
+    global SbsProcessHandler
     parser = argparse.ArgumentParser(description = 'Software Benchmarking Script3')
     parser.add_argument('-c', help='Command to run', default=None, required=True)
     parser.add_argument('-o', help='Output file name', default=None, required=True)
@@ -201,20 +288,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        print 'SBS initialisating at %s with args: %s' % (time.time(), args)
+        print '\nSBS initialising at %s (PID = %s)\nwith args:\n%s\n' % (time.time(), os.getpid(), args)
+        SbsProcessHandler = None # just initialise this for now
         main(args.c, args.o, args.s, args.l)
     except KeyboardInterrupt:
         # tidy up
         print '\n\nInterrupted. Tidying up...'
-        print 'Output file closes on exit.\n'
-        parent = psutil.Process(os.getpid()) # os.getpid() gets this scripts process ID
-        children = parent.children(recursive=True)
-        for p in children:
-            print 'Killing child process: %s' % p
-            p.send_signal(signal.SIGTERM)
+        print 'Output file(s) close on exit.\n'
 
-        print 'All child processes terminated at (if any): %s' % time.time()
-        print '\nKilling self: %s' % parent
-        parent.send_signal(signal.SIGTERM)
-
+        del SbsProcessHandler
+        
         print '\nGoodbye.\n'
