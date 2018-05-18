@@ -75,7 +75,7 @@ class SbsProcess(psutil.Process):
         i = 0
         while i < len(mName):
             if outputMeasurementsToFile:
-                fileName = '%s_%s.csv' % (re.sub('[\\/:"*?<>|]+', '_', self.name.replace(' ', '_')), mName[i])
+                fileName = '%s_%s_%s.csv' % (OUTPUT_FIL, re.sub('[\\\/:"*?<>|]+', '_', self.name.replace(' ', '_')), mName[i])
             self.measurements.append(SbsMeasurement(mName[i], mType[i], fileName))
             i = i + 1
 
@@ -181,14 +181,15 @@ def getProcessName(objPsutilProcess):
     return '%s%s%s' % (objPsutilProcess.pid, objPsutilProcess.create_time(), '"%s"'%(' '.join(objPsutilProcess.cmdline())))
 
 	
-def main(cmd, outFile, sleepTime, loggable):
+def main(cmd, sleepTime, loggable):
     global SbsProcessHandler
     # check if file exists. It'd be terrible to overwrite experiment data.
-    if os.path.exists(outFile):
+    if os.path.exists(OUTPUT_FIL):
         if raw_input('Output file exists. Overwrite? (y/n): ') == 'n':
             print 'Goodbye.'
             quit()   
-
+        print 'SBS will only overwrite the aggregate file and not the associated CSV files.'
+        
     try:
         # using psutil, start the process. 
         parentProcess = psutil.Popen(cmd.split(' '))
@@ -213,7 +214,7 @@ def main(cmd, outFile, sleepTime, loggable):
     print 'SBS Process Handler started...\n'
     
     # start monitoring. open output file to write to.
-    with open(outFile, 'w+') as fData:
+    with open(OUTPUT_FIL, 'w+') as fData:
         # we want to keep track of all child processes, forever.
         childProcessHistory = []
         
@@ -263,7 +264,7 @@ def main(cmd, outFile, sleepTime, loggable):
                 fData.write('%s\n' % (','.join(SbsProcessHandler.getParent().getMeasurementNamesList())))
                 firstFileWrite = False
                 
-            fData.write(outputMeasurements.toCsv())
+            fData.write('%s\n' % outputMeasurements.toCsv())
             
             # flush the write buffer if the user desires
             if loggable == 'y':
@@ -282,15 +283,17 @@ if __name__ == "__main__":
     global SbsProcessHandler
     parser = argparse.ArgumentParser(description = 'Software Benchmarking Script3')
     parser.add_argument('-c', help='Command to run', default=None, required=True)
-    parser.add_argument('-o', help='Output file name', default=None, required=True)
+    parser.add_argument('-o', help='Output file location and name', default=None, required=True)
     parser.add_argument('-s', help='Time to sleep (sec) (default=1)', type=int, default=1)
     parser.add_argument('-l', help='Flush output buffer on each poll (allows output to be tail\'able) (y/n) (default=n)', type=str, default='n')
     args = parser.parse_args()
 
+    OUTPUT_FIL = args.o
+    
     try:
         print '\nSBS initialising at %s (PID = %s)\nwith args:\n%s\n' % (time.time(), os.getpid(), args)
         SbsProcessHandler = None # just initialise this for now
-        main(args.c, args.o, args.s, args.l)
+        main(args.c, args.s, args.l)
     except KeyboardInterrupt:
         # tidy up
         print '\n\nInterrupted. Tidying up...'
