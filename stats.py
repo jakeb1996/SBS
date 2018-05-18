@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-import argparse, csv, numpy
+import argparse, csv, numpy, time
 
 def main(resultsFile, toolName):
     print 'Running for: %s\n' % toolName
@@ -67,6 +67,9 @@ def main(resultsFile, toolName):
     # match it with the associated plot configuration above.
     headerOrder = []
     
+    # put all the times in a list
+    timeRecords = [None]
+    
     with open(resultsFile, 'r') as fcsv:
         dataCsv = csv.reader(fcsv, delimiter=',')
 
@@ -78,9 +81,11 @@ def main(resultsFile, toolName):
         for row in dataCsv:
             
             # Elapsed time
-            if firstTime == None:
-                firstTime = row[0]
-            ELAPSED_TIME.append(float(row[0]) - float(firstTime))
+            if timeRecords[0] == None:
+                timeRecords[0] = float(row[0])
+            else:
+                timeRecords.append(float(row[0]))
+            ELAPSED_TIME.append(float(row[0]) - float(timeRecords[0]))
 
             i = 1 # skip zero as its the time (as above)
             for measurement in headerOrder:
@@ -103,6 +108,9 @@ def main(resultsFile, toolName):
                 line = ('%s,%s' % (line, stat(measurements[measurement]['data'])))
             scsv.write('%s\n' % line)
 
+        # write start and end time
+        scsv.write('start_time,%s,"%s"\nend_time,%s,"%s"\nelapsed_time,%s' % (timeRecords[0], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[0])), timeRecords[-1], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[-1])), timeRecords[-1] - timeRecords[0]))
+        
     print '\nFinished.'
         
 def q1(seq):
