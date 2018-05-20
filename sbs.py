@@ -3,6 +3,7 @@ from subprocess import PIPE
 
 MEASUREMENT_TYPE_INSTANT = 1
 MEASUREMENT_TYPE_CUMULATIVE = 2
+MEASUREMENT_TYPE_NO_CALC = 3
 
 class SbsMeasurement():
     def __init__(self, inName, inType, outFileName=None):
@@ -60,7 +61,7 @@ class SbsProcess(psutil.Process):
             'child_process_count'
         ]
         mType = [
-            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_NO_CALC,
             MEASUREMENT_TYPE_INSTANT,
             MEASUREMENT_TYPE_INSTANT,
             MEASUREMENT_TYPE_INSTANT,
@@ -167,6 +168,10 @@ class SbsOutputRow():
             # because the measurement is cumulative, we want to know its usage even after it has ended
             if measurement.type == MEASUREMENT_TYPE_CUMULATIVE:
                 self._values[i] = self._values[i] + measurement.cumulative
+				
+            if measurement.type == MEASUREMENT_TYPE_NO_CALC:
+                self._values[i] = self._values[i]
+                
             i = i + 1
             
     def toCsv(self):

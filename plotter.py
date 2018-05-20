@@ -81,7 +81,7 @@ def main(resultsFile, toolName, childProcessFile):
         },
         'child_process_count' : {
                 'y-data' : [],
-                'title' : 'Child Process Spawning',
+                'title' : 'Child Process Count',
                 'y-label' : 'Number of Child Processes'
         }
     }
