@@ -75,7 +75,7 @@ class SbsProcess(psutil.Process):
         i = 0
         while i < len(mName):
             if outputMeasurementsToFile:
-                fileName = '%s_%s_%s.csv' % (OUTPUT_FIL, re.sub('[\\\/:"*?<>|]+', '_', self.name.replace(' ', '_')), mName[i])
+                fileName = '%s_%s_%s' % (OUTPUT_FIL, self._process.pid, mName[i])
             self.measurements.append(SbsMeasurement(mName[i], mType[i], fileName))
             i = i + 1
 
