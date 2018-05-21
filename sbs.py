@@ -66,7 +66,7 @@ class SbsProcess(psutil.Process):
 
     def __init__(self, pid, outputMeasurementsToFile=True, *args, **kwargs):
         super(SbsProcess, self).__init__(*args, **kwargs)
-        self._process = psutil.Process(pid, stdout=self._stdout)
+        self._process = psutil.Process(pid)
         self.name = getProcessName(self._process)
         self.measurements = []
         self._cmd = ' '.join(self._process.cmdline())
@@ -123,8 +123,7 @@ class SbsProcess(psutil.Process):
                 self.measurements[7].update(io.write_count)
                 self.measurements[8].update(io.write_bytes)
                 self.measurements[9].update(len(self._process.children()))
-                
-                print self._process.stdout.readline()
+
     def getMeasurements(self):
         return self.measurements
 
