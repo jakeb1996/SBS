@@ -4,7 +4,20 @@ from subprocess import PIPE
 MEASUREMENT_TYPE_INSTANT = 1
 MEASUREMENT_TYPE_CUMULATIVE = 2
 MEASUREMENT_TYPE_NO_CALC = 3
+LAST_UPDATE_MEASUREMENTS = None
 
+# https://stackoverflow.com/a/11325249
+class Tee(object):
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush() # If you want the output to be visible immediately
+    def flush(self) :
+        for f in self.files:
+            f.flush()
+            
 class SbsMeasurement():
     def __init__(self, inName, inType, outFileName=None):
         self.name = inName
@@ -15,8 +28,10 @@ class SbsMeasurement():
         
         self._outFileName = outFileName
         self._values = []
+        self._times = []
         
     def update(self, newValue):
+        global LAST_UPDATE_MEASUREMENTS
         # even though some of this data may be meaningless for some measurements,
         # we will keep it anyway.
         self.delta = newValue - self.lastValue
@@ -24,12 +39,16 @@ class SbsMeasurement():
         self.cumulative = self.cumulative + self.delta
         
         self._values.append(newValue)
-      
+        self._times.append(LAST_UPDATE_MEASUREMENTS)
+        
     def __del__(self):
         if self._outFileName != None:
             try:
                 with open(self._outFileName, 'w+') as fcsv:
-                    fcsv.write('\n'.join(map(str, self._values)))
+                    i = 0
+                    while i < len(self._values):
+                        fcsv.write('%s,%s\n' % (self._times[i], self._values[i]))
+                        i = i + 1
             except Exception as e:
                 print e
                 print 'Failed to write to: %s' % self._outFileName
@@ -38,15 +57,20 @@ class SbsMeasurement():
 class SbsProcess(psutil.Process):
     # private
     _process = None
+    _cmd = None
+    _launchTime = None
+    _stdout = None
     
     # public
     name = None
 
     def __init__(self, pid, outputMeasurementsToFile=True, *args, **kwargs):
         super(SbsProcess, self).__init__(*args, **kwargs)
-        self._process = psutil.Process(pid)
+        self._process = psutil.Process(pid, stdout=self._stdout)
         self.name = getProcessName(self._process)
         self.measurements = []
+        self._cmd = ' '.join(self._process.cmdline())
+        self._launchTime = self._process.create_time()
         
         mName = [
             'time',
@@ -79,14 +103,17 @@ class SbsProcess(psutil.Process):
                 fileName = '%s_%s_%s' % (OUTPUT_FIL, self._process.pid, mName[i])
             self.measurements.append(SbsMeasurement(mName[i], mType[i], fileName))
             i = i + 1
+            
+        print 'Process launched [PID: %s, Start: %s]: %s\n' % (pid, self._launchTime, self._cmd)
 
     def updateMeasurements(self):
+        global LAST_UPDATE_MEASUREMENTS
         if self.isRunning():
             with self._process.oneshot():
                 mem = self._process.memory_info()
                 io = self._process.io_counters()
                 
-                self.measurements[0].update(time.time())
+                self.measurements[0].update(LAST_UPDATE_MEASUREMENTS)
                 self.measurements[1].update(self._process.num_threads())
                 self.measurements[2].update(self._process.cpu_percent())
                 self.measurements[3].update(mem.rss)
@@ -96,10 +123,17 @@ class SbsProcess(psutil.Process):
                 self.measurements[7].update(io.write_count)
                 self.measurements[8].update(io.write_bytes)
                 self.measurements[9].update(len(self._process.children()))
-
+                
+                print self._process.stdout.readline()
     def getMeasurements(self):
         return self.measurements
 
+    def getCmd(self):
+        return self._cmd
+    
+    def getLaunchTime(self):
+        return self._launchTime
+    
     def getMeasurementNamesList(self):
         return [m.name for m in self.measurements]
         
@@ -132,16 +166,18 @@ class SbsProcessHandlerClass():
         return self._parent
     
     def __del__(self):
-        if len(self.getChildren()) > 0:
-            print '\nDeleting children SbsProcess...'
-            for child in self.getChildren():
-                print child.getPid()
-                try:
-                    del child
-                except Exception as e:
-                    print e
-                    print 'Failed to end a child SbsProcess...'
-    
+        with open(('%s_child_cmds' % OUTPUT_FIL), 'w+') as fCmdLog:
+            if len(self.getChildren()) > 0:
+                print '\nDeleting children SbsProcess...'
+                for child in self.getChildren():
+                    print child.getPid()
+                    try:
+                        fCmdLog.write('PID %s launched at %s\n\t%s' % (child.getPid(), child.getLaunchTime(), child.getCmd()))
+                        del child
+                    except Exception as e:
+                        print e
+                        print 'Failed to end a child SbsProcess...'
+        print 'Wrote to: %s' % ('%s_child_cmds' % OUTPUT_FIL)
         print '\nDeleting parent SbsProcess...'
         try:
             del self._parent
@@ -188,6 +224,7 @@ def getProcessName(objPsutilProcess):
 	
 def main(cmd, sleepTime, loggable):
     global SbsProcessHandler
+    global LAST_UPDATE_MEASUREMENTS
     # check if file exists. It'd be terrible to overwrite experiment data.
     if os.path.exists(OUTPUT_FIL):
         if raw_input('Output file exists. Overwrite? (y/n): ') == 'n':
@@ -254,6 +291,9 @@ def main(cmd, sleepTime, loggable):
             #   - using the parents data as a basis, start aggregating with child measurements
             # To achieve this, we will use the handy SbsOutputRow class, which does the
             # work for us. See class implementation above.
+            
+            LAST_UPDATE_MEASUREMENTS = time.time()
+            
             SbsProcessHandler.getParent().updateMeasurements()
             outputMeasurements = SbsOutputRow(SbsProcessHandler.getParent())
 
@@ -295,6 +335,10 @@ if __name__ == "__main__":
 
     OUTPUT_FIL = args.o
     
+    fstd = open(('%s_stdout_log' % args.o), 'w+')
+    original = sys.stdout
+    sys.stdout = Tee(sys.stdout, fstd)
+    
     try:
         print '\nSBS initialising at %s (PID = %s)\nwith args:\n%s\n' % (time.time(), os.getpid(), args)
         SbsProcessHandler = None # just initialise this for now
@@ -307,3 +351,6 @@ if __name__ == "__main__":
         del SbsProcessHandler
         
         print '\nGoodbye.\n'
+        
+    sys.stdout = original
+    fstd.close()
