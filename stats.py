@@ -4,8 +4,9 @@ import argparse, csv, numpy, time
 def main(resultsFile, toolName):
     print 'Running for: %s\n' % toolName
     
-    ELAPSED_TIME = []
-
+    TIME_ELAPSED = []
+    TIME_GAPS = []
+    
     config = {
         'data-type-default' : int
     }
@@ -22,7 +23,12 @@ def main(resultsFile, toolName):
  #               'data' : [],
  #               'title' : 'measurement title'
  #       },
- # --- end sample ---       
+ # --- end sample ---
+        'time' : {
+                'data' : [],
+                'data-type' : float,
+                'title' : 'Time'
+        },
         'num_threads' : {
                 'data' : [],
                 'title' : 'Number of Threads'
@@ -68,33 +74,35 @@ def main(resultsFile, toolName):
     headerOrder = []
     
     # put all the times in a list
-    timeRecords = [None]
+    timeRecords = []
     
     with open(resultsFile, 'r') as fcsv:
         dataCsv = csv.reader(fcsv, delimiter=',')
 
         # Set the headerOrder and remove the time column header
         headerOrder = dataCsv.next()
-        del headerOrder[0]
         
         firstTime = None
         for row in dataCsv:
             
             # Elapsed time
-            if timeRecords[0] == None:
-                timeRecords[0] = float(row[0])
-            else:
-                timeRecords.append(float(row[0]))
-            ELAPSED_TIME.append(float(row[0]) - float(timeRecords[0]))
-
-            i = 1 # skip zero as its the time (as above)
+            
+            timeRecords.append(float(row[0]))
+            TIME_ELAPSED.append(float(row[0]) - float(timeRecords[0]))
+    
+            if firstTime == False:
+                TIME_GAPS.append(float(row[0]) - measurements['time']['data'][-1])
+            
+            i = 0 # skip zero as its the time (as above)
             for measurement in headerOrder:
                 if 'data-type' in measurements[measurement]:
                     measurements[measurement]['data'].append(measurements[measurement]['data-type'](row[i]))
                 else:
                     measurements[measurement]['data'].append(config['data-type-default'](row[i]))
                 i += 1
-
+            
+            firstTime = False
+            
     resultsFileName = '%s_stats.csv' % resultsFile
     with open(resultsFileName, 'w') as scsv:
         print 'Writing to file: %s' % resultsFileName
@@ -108,8 +116,15 @@ def main(resultsFile, toolName):
                 line = ('%s,%s' % (line, stat(measurements[measurement]['data'])))
             scsv.write('%s\n' % line)
 
+        # now, because the time gaps were calculated separately, run the stats on them tool
+        # messy, I know. sorry!
+        line = '%s' % 'time_gaps'
+        for stat in stats:
+            line = ('%s,%s' % (line, stat(TIME_GAPS)))
+        scsv.write('%s\n' % line)
+   
         # write start and end time
-        scsv.write('start_time,%s,"%s"\nend_time,%s,"%s"\nelapsed_time,%s' % (timeRecords[0], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[0])), timeRecords[-1], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[-1])), timeRecords[-1] - timeRecords[0]))
+        scsv.write('start_time,%s,"%s"\nend_time,%s,"%s"\nTIME_ELAPSED,%s,sec,%s,min' % (timeRecords[0], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[0])), timeRecords[-1], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[-1])), (timeRecords[-1] - timeRecords[0]), ((timeRecords[-1] - timeRecords[0]) / 60)))
         
     print '\nFinished.'
         

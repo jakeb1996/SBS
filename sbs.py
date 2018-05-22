@@ -28,7 +28,6 @@ class SbsMeasurement():
         
         self._outFileName = outFileName
         self._values = []
-        self._times = []
         
     def update(self, newValue):
         global LAST_UPDATE_MEASUREMENTS
@@ -39,20 +38,9 @@ class SbsMeasurement():
         self.cumulative = self.cumulative + self.delta
         
         self._values.append(newValue)
-        self._times.append(LAST_UPDATE_MEASUREMENTS)
-        
-    def __del__(self):
-        if self._outFileName != None:
-            try:
-                with open(self._outFileName, 'w+') as fcsv:
-                    i = 0
-                    while i < len(self._values):
-                        fcsv.write('%s,%s\n' % (self._times[i], self._values[i]))
-                        i = i + 1
-            except Exception as e:
-                print e
-                print 'Failed to write to: %s' % self._outFileName
-            print 'Wrote to: %s' % (self._outFileName)
+     
+    def getValueByIndex(self, index):
+        return self._values[index]
                 
 class SbsProcess(psutil.Process):
     # private
@@ -60,6 +48,7 @@ class SbsProcess(psutil.Process):
     _cmd = None
     _launchTime = None
     _stdout = None
+    _times = []
     
     # public
     name = None
@@ -85,7 +74,7 @@ class SbsProcess(psutil.Process):
             'child_process_count'
         ]
         mType = [
-            MEASUREMENT_TYPE_NO_CALC,
+            MEASUREMENT_TYPE_NO_CALC,           
             MEASUREMENT_TYPE_INSTANT,
             MEASUREMENT_TYPE_INSTANT,
             MEASUREMENT_TYPE_INSTANT,
@@ -123,7 +112,9 @@ class SbsProcess(psutil.Process):
                 self.measurements[7].update(io.write_count)
                 self.measurements[8].update(io.write_bytes)
                 self.measurements[9].update(len(self._process.children()))
-
+                
+                self._times.append(LAST_UPDATE_MEASUREMENTS)
+                
     def getMeasurements(self):
         return self.measurements
 
@@ -145,16 +136,107 @@ class SbsProcess(psutil.Process):
         return self._process.pid
         
     def __del__(self):
-        for m in self.measurements:
-            del m
-        print 'SbsProcess deconstructor triggered: %s ' % self.name   
+        try:
+            fileName = '%s_%s' % (OUTPUT_FIL, self._process.pid)
+            with open(fileName, 'w+') as fcsv:
+                fcsv.write('%s\n' % (','.join(self.getMeasurementNamesList())))
+                for i in xrange(len(self._times)):
+                    tempRow = []
+                    for m in self.measurements:
+                        tempRow.append(m.getValueByIndex(i))
+
+                    fcsv.write('%s\n' % (','.join(map(str,tempRow))))
+                    i = i + 1
+                    
+        except Exception as e:
+            print e
+            print 'Failed to write to: %s' % fileName
+        print 'Wrote to: %s' % (fileName)
+
+class SbsSystemStatus():
+    _times = []
+    
+    def __init__(self, outputMeasurementsToFile=True, *args, **kwargs):
+        self.measurements = []
+        
+        mName = [
+            'time',
+            'cpu_percent',
+            'mem_used',
+            'mem_avai',
+            'io_read_count',
+            'io_read_bytes',
+            'io_write_count',
+            'io_write_bytes',
+            'process_count',
+        ]
+        mType = [
+            MEASUREMENT_TYPE_NO_CALC,
+            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_INSTANT,
+            MEASUREMENT_TYPE_CUMULATIVE,
+            MEASUREMENT_TYPE_CUMULATIVE,
+            MEASUREMENT_TYPE_CUMULATIVE,
+            MEASUREMENT_TYPE_CUMULATIVE,
+            MEASUREMENT_TYPE_INSTANT
+        ]
+
+        i = 0
+        while i < len(mName):
+            if outputMeasurementsToFile:
+                fileName = '%s_%s_%s' % (OUTPUT_FIL, 'system', mName[i])
+            self.measurements.append(SbsMeasurement(mName[i], mType[i], fileName))
+            i = i + 1
+
+    def updateMeasurements(self):
+        global LAST_UPDATE_MEASUREMENTS
+        mem = psutil.virtual_memory()
+        io = psutil.disk_io_counters()
+        
+        self.measurements[0].update(LAST_UPDATE_MEASUREMENTS)
+        self.measurements[1].update(psutil.cpu_percent())
+        self.measurements[2].update(mem.used)
+        self.measurements[3].update(mem.available)
+        self.measurements[4].update(io.read_count)
+        self.measurements[5].update(io.read_bytes)
+        self.measurements[6].update(io.write_count)
+        self.measurements[7].update(io.write_bytes)
+        self.measurements[8].update(len(psutil.pids()))
+        
+        self._times.append(LAST_UPDATE_MEASUREMENTS)
+
+    def getMeasurements(self):
+        return self.measurements
+
+    def getMeasurementNamesList(self):
+        return [m.name for m in self.measurements]
+
+    def __del__(self):
+        try:
+            fileName = '%s_%s' % (OUTPUT_FIL, 'system')
+            with open(fileName, 'w+') as fcsv:
+                fcsv.write('%s\n' % (','.join(self.getMeasurementNamesList())))
+                for i in xrange(len(self._times)):
+                    tempRow = []
+                    for m in self.measurements:
+                        tempRow.append(m.getValueByIndex(i))
+
+                    fcsv.write('%s\n' % (','.join(map(str,tempRow))))
+                    i = i + 1
+                    
+        except Exception as e:
+            print e
+            print 'Failed to write to: %s' % fileName
+        print 'Wrote to: %s' % (fileName)
         
 class SbsProcessHandlerClass():
     # there should only be one instance of this class (why doesn't python support static classes)
     def __init__(self, parentPid):
         self._parent = SbsProcess(parentPid)
         self._children = []
-    
+        self._system = SbsSystemStatus()
+        
     def addChild(self, childPid):
         self._children.append(SbsProcess(childPid))
     
@@ -164,14 +246,18 @@ class SbsProcessHandlerClass():
     def getParent(self):
         return self._parent
     
+    def getSystem(self):
+        return self._system
+    
     def __del__(self):
+        # now that we're ending the handler, write to file how each process was launched
         with open(('%s_child_cmds' % OUTPUT_FIL), 'w+') as fCmdLog:
             if len(self.getChildren()) > 0:
                 print '\nDeleting children SbsProcess...'
                 for child in self.getChildren():
                     print child.getPid()
                     try:
-                        fCmdLog.write('PID %s launched at %s\n\t%s' % (child.getPid(), child.getLaunchTime(), child.getCmd()))
+                        fCmdLog.write('PID %s launched at %s\n\t%s\n' % (child.getPid(), child.getLaunchTime(), child.getCmd()))
                         del child
                     except Exception as e:
                         print e
@@ -255,7 +341,7 @@ def main(cmd, sleepTime, loggable):
     print 'SBS Process Handler started...\n'
     
     # start monitoring. open output file to write to.
-    with open(OUTPUT_FIL, 'w+') as fData:
+    with open(('%s_aggregate' % OUTPUT_FIL), 'w+') as fData:
         # we want to keep track of all child processes, forever.
         childProcessHistory = []
         
@@ -265,14 +351,16 @@ def main(cmd, sleepTime, loggable):
         while SbsProcessHandler.getParent().isRunning():
 
             # find all children of parent (grandchildren too, etc)
-
             for child in SbsProcessHandler.getParent().children(recursive=True):
+            
                 # make sure the child is still running and is not a zombie
-                # we cannot call SbsProcess.isRunning() because this is a native psutil class still,
+                # we cannot call SbsProcess.isRunning() because this is still a native psutil class,
                 # and not a SbsProcess. We will convert it soon. (instead, use the psutil.Process.is_running() method)
                 if child.is_running() and child.status() != psutil.STATUS_ZOMBIE and child.pid != SbsProcessHandler.getParent().getPid():
                 
                     # check to see if we've seen this child before
+                    # note: we're going to miss any children that are launched and end between this check. Notably, we sleep for 1 sec
+                    # before analysing again.
                     seenChildAlready = False
                     
                     for existChild in SbsProcessHandler.getChildren():
@@ -294,6 +382,8 @@ def main(cmd, sleepTime, loggable):
             LAST_UPDATE_MEASUREMENTS = time.time()
             
             SbsProcessHandler.getParent().updateMeasurements()
+            SbsProcessHandler.getSystem().updateMeasurements()
+            
             outputMeasurements = SbsOutputRow(SbsProcessHandler.getParent())
 
             for child in SbsProcessHandler.getChildren():
@@ -328,7 +418,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Software Benchmarking Script3')
     parser.add_argument('-c', help='Command to run', default=None, required=True)
     parser.add_argument('-o', help='Output file location and name', default=None, required=True)
-    parser.add_argument('-s', help='Time to sleep (sec) (default=1)', type=int, default=1)
+    parser.add_argument('-s', help='Time to sleep (sec) (default=1)', type=float, default=1)
     parser.add_argument('-l', help='Flush output buffer on each poll (allows output to be tail\'able) (y/n) (default=n)', type=str, default='n')
     args = parser.parse_args()
 
