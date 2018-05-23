@@ -169,7 +169,7 @@ def stat(resultsFile, toolName):
         scsv.write('%s\n' % line)
    
         # write start and end time
-        scsv.write('start_time,%s,"%s"\nend_time,%s,"%s"\time_elapsed,%s,sec,%s,min' % (timeRecords[0], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[0])), timeRecords[-1], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[-1])), (timeRecords[-1] - timeRecords[0]), ((timeRecords[-1] - timeRecords[0]) / 60)))
+        scsv.write('start_time,%s,"%s"\nend_time,%s,"%s"\ntime_elapsed,%s,sec,%s,min' % (timeRecords[0], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[0])), timeRecords[-1], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[-1])), (timeRecords[-1] - timeRecords[0]), ((timeRecords[-1] - timeRecords[0]) / 60)))
         
     print '\nFinished.'
         

@@ -130,9 +130,7 @@ class SbsProcess(psutil.Process):
         return [m.name for m in self.measurements]
         
     def isRunning(self):
-        if self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE:
-            return True
-        return False
+        return (self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE)
 
     def getPid(self):
         return self._process.pid
