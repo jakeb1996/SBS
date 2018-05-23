@@ -33,8 +33,6 @@ def main(resultsFile, toolName, childProcessFile):
         plot(filesToPlot[i], plotTitles[i], None)
         i = i + 1
 
-    exit()
-
 def plot(resultsFile, toolName, childProcessFile):
     print 'Running for: %s\n' % toolName
     
