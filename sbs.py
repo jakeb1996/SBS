@@ -48,7 +48,8 @@ class SbsProcess(psutil.Process):
     _cmd = None
     _launchTime = None
     _stdout = None
-    _times = []
+    _numberOfMeasurementUpdates = 0
+    _last_isRunning = None
     
     # public
     name = None
@@ -113,7 +114,8 @@ class SbsProcess(psutil.Process):
                 self.measurements[8].update(io.write_bytes)
                 self.measurements[9].update(len(self._process.children()))
                 
-                self._times.append(LAST_UPDATE_MEASUREMENTS)
+                self._numberOfMeasurementUpdates = self._numberOfMeasurementUpdates + 1
+                self._last_isRunning = LAST_UPDATE_MEASUREMENTS
                 
     def getMeasurements(self):
         return self.measurements
@@ -134,13 +136,16 @@ class SbsProcess(psutil.Process):
 
     def getPid(self):
         return self._process.pid
-        
+    
+    def getLastIsRunningTime(self):
+        return self._last_isRunning
+    
     def __del__(self):
         try:
             fileName = '%s_%s' % (OUTPUT_FIL, self._process.pid)
             with open(fileName, 'w+') as fcsv:
                 fcsv.write('%s\n' % (','.join(self.getMeasurementNamesList())))
-                for i in xrange(len(self._times)):
+                for i in xrange(self._numberOfMeasurementUpdates):
                     tempRow = []
                     for m in self.measurements:
                         tempRow.append(m.getValueByIndex(i))
@@ -151,10 +156,12 @@ class SbsProcess(psutil.Process):
         except Exception as e:
             print e
             print 'Failed to write to: %s' % fileName
+            return 0
         print 'Wrote to: %s' % (fileName)
 
 class SbsSystemStatus():
-    _times = []
+
+    _numberOfMeasurementUpdates = 0
     
     def __init__(self, outputMeasurementsToFile=True, *args, **kwargs):
         self.measurements = []
@@ -203,9 +210,9 @@ class SbsSystemStatus():
         self.measurements[6].update(io.write_count)
         self.measurements[7].update(io.write_bytes)
         self.measurements[8].update(len(psutil.pids()))
-        
-        self._times.append(LAST_UPDATE_MEASUREMENTS)
 
+        self._numberOfMeasurementUpdates = self._numberOfMeasurementUpdates + 1
+        
     def getMeasurements(self):
         return self.measurements
 
@@ -217,7 +224,7 @@ class SbsSystemStatus():
             fileName = '%s_%s' % (OUTPUT_FIL, 'system')
             with open(fileName, 'w+') as fcsv:
                 fcsv.write('%s\n' % (','.join(self.getMeasurementNamesList())))
-                for i in xrange(len(self._times)):
+                for i in xrange(self._numberOfMeasurementUpdates):
                     tempRow = []
                     for m in self.measurements:
                         tempRow.append(m.getValueByIndex(i))
@@ -251,18 +258,19 @@ class SbsProcessHandlerClass():
     
     def __del__(self):
         # now that we're ending the handler, write to file how each process was launched
-        with open(('%s_child_cmds' % OUTPUT_FIL), 'w+') as fCmdLog:
+        with open(('%s_child_cmds' % OUTPUT_FIL), 'w+') as fCmdLog, open(('%s_child_cmds_plot' % OUTPUT_FIL), 'w+') as fCmdLogPlot:
             if len(self.getChildren()) > 0:
                 print '\nDeleting children SbsProcess...'
                 for child in self.getChildren():
                     print child.getPid()
                     try:
                         fCmdLog.write('PID %s launched at %s\n\t%s\n' % (child.getPid(), child.getLaunchTime(), child.getCmd()))
+                        fCmdLogPlot.write('%s,%s,%s\n' % (child.getPid(), child.getLaunchTime(), child.getLastIsRunningTime()))
                         del child
                     except Exception as e:
                         print e
                         print 'Failed to end a child SbsProcess...'
-        print 'Wrote to: %s' % ('%s_child_cmds' % OUTPUT_FIL)
+        print 'Wrote to: %s\nand: %s' % (('%s_child_cmds' % OUTPUT_FIL), ('%s_child_cmds_plot' % OUTPUT_FIL))
         print '\nDeleting parent SbsProcess...'
         try:
             del self._parent

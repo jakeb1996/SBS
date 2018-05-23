@@ -1,7 +1,33 @@
 import matplotlib.pyplot as plt
-import argparse, csv, numpy, time
+import argparse, csv, numpy, time, os, re
 
-def main(resultsFile, toolName):
+def main(resultsFile, toolName):    
+    
+    filesToCalc = []
+    toolNames = []
+    
+    if os.path.isfile(resultsFile):
+        # the user must have defined an exact file to plot
+        filesToCalc.append(resultsFile)
+        toolNames.append(toolName)
+    else:
+        # check if there are multiple files matching the criteria
+        dir = (os.sep).join(resultsFile.split(os.sep)[:-1])
+        fileNameStart = resultsFile.split(os.sep)[-1]
+        for (dirpath, dirnames, filenames) in os.walk(dir):
+            for filename in filenames:
+                reMatch = re.search('%s_((aggregate|system)|(\d)+)\\b' % fileNameStart, filename)
+                if bool(reMatch):
+                    filesToCalc.append(os.path.join(dirpath, filename))
+                    toolNames.append('%s %s' %(toolName, reMatch.group(1).title()))
+    
+    # start plotting
+    i = 0
+    while i < len(filesToCalc):
+        stat(filesToCalc[i], toolNames[i])
+        i = i + 1
+
+def stat(resultsFile, toolName):
     print 'Running for: %s\n' % toolName
     
     TIME_ELAPSED = []
@@ -24,6 +50,8 @@ def main(resultsFile, toolName):
  #               'title' : 'measurement title'
  #       },
  # --- end sample ---
+ 
+        ### START CHILD PROCESS STATS ###
         'time' : {
                 'data' : [],
                 'data-type' : float,
@@ -65,8 +93,25 @@ def main(resultsFile, toolName):
         },
         'child_process_count' : {
                 'data' : [],
-                'title' : 'Child Process Spawning'
-        }
+                'title' : 'Child Process Count'
+        },
+        
+        ### START SYSTEM STATS ###
+        # if the stat was defined above, then don't define it again
+        'mem_used' : {
+                'data' : [],
+                'data-type' : float,
+                'title' : 'Physical Memory Used (megabytes)'
+        },
+        'mem_avai' : {
+                'data' : [],
+                'data-type' : float,
+                'title' : 'Physical Memory Available (megabytes)',
+        },
+        'process_count' : {
+                'data' : [],
+                'title' : 'Process Count'
+        }    
     }
     
     # due to dictionaries not being in order, we need to know the order the data appears and
@@ -124,7 +169,7 @@ def main(resultsFile, toolName):
         scsv.write('%s\n' % line)
    
         # write start and end time
-        scsv.write('start_time,%s,"%s"\nend_time,%s,"%s"\nTIME_ELAPSED,%s,sec,%s,min' % (timeRecords[0], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[0])), timeRecords[-1], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[-1])), (timeRecords[-1] - timeRecords[0]), ((timeRecords[-1] - timeRecords[0]) / 60)))
+        scsv.write('start_time,%s,"%s"\nend_time,%s,"%s"\time_elapsed,%s,sec,%s,min' % (timeRecords[0], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[0])), timeRecords[-1], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeRecords[-1])), (timeRecords[-1] - timeRecords[0]), ((timeRecords[-1] - timeRecords[0]) / 60)))
         
     print '\nFinished.'
         
