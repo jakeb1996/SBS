@@ -147,7 +147,11 @@ def stat(resultsFile, toolName):
                 i += 1
             
             firstTime = False
-            
+    
+    if len(timeRecords) == 0:
+        print 'No data recorded in %s.\nExiting.\n\n' % resultsFile
+        return 0
+    
     resultsFileName = '%s_stats.csv' % resultsFile
     with open(resultsFileName, 'w') as scsv:
         print 'Writing to file: %s' % resultsFileName
