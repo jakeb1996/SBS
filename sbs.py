@@ -99,23 +99,27 @@ class SbsProcess(psutil.Process):
     def updateMeasurements(self):
         global LAST_UPDATE_MEASUREMENTS
         if self.isRunning():
-            with self._process.oneshot():
-                mem = self._process.memory_info()
-                io = self._process.io_counters()
-                
-                self.measurements[0].update(LAST_UPDATE_MEASUREMENTS)
-                self.measurements[1].update(self._process.num_threads())
-                self.measurements[2].update(self._process.cpu_percent())
-                self.measurements[3].update(mem.rss)
-                self.measurements[4].update(mem.vms)
-                self.measurements[5].update(io.read_count)
-                self.measurements[6].update(io.read_bytes)
-                self.measurements[7].update(io.write_count)
-                self.measurements[8].update(io.write_bytes)
-                self.measurements[9].update(len(self._process.children()))
-                
-                self._numberOfMeasurementUpdates = self._numberOfMeasurementUpdates + 1
-                self._last_isRunning = LAST_UPDATE_MEASUREMENTS
+            try:
+                with self._process.oneshot():
+                    mem = self._process.memory_info()
+                    io = self._process.io_counters()
+                    
+                    self.measurements[0].update(LAST_UPDATE_MEASUREMENTS)
+                    self.measurements[1].update(self._process.num_threads())
+                    self.measurements[2].update(self._process.cpu_percent())
+                    self.measurements[3].update(mem.rss)
+                    self.measurements[4].update(mem.vms)
+                    self.measurements[5].update(io.read_count)
+                    self.measurements[6].update(io.read_bytes)
+                    self.measurements[7].update(io.write_count)
+                    self.measurements[8].update(io.write_bytes)
+                    self.measurements[9].update(len(self._process.children()))
+                    
+                    self._numberOfMeasurementUpdates = self._numberOfMeasurementUpdates + 1
+                    self._last_isRunning = LAST_UPDATE_MEASUREMENTS
+            except Exception as e:
+                print 'Failed to update measurements for: %s' % self._process.pid
+                print '%s owns the process' % self._process.username()
                 
     def getMeasurements(self):
         return self.measurements
