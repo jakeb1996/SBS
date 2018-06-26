@@ -16,6 +16,18 @@ A simple method for launching a process and collecting system resource utilisati
 
 2. Open your CLI and navigate to the root directory of the repository.
 
+3. (optional) Add to Windows context menu. 
+
+In Registry Editor:
+
+Create `HKEY_CLASSES_ROOT/*/shell/SBS Plot` and  `HKEY_CLASSES_ROOT/*/shell/SBS Plot/command`
+
+Set the value for `command` to `C:\python27\python.exe C:\git\SBS\plotter.py --wincntxmnu -f "%1"`
+
+Create `HKEY_CLASSES_ROOT/*/shell/SBS Stats` and  `HKEY_CLASSES_ROOT/*/shell/SBS Stats/command`
+
+Set the value for `command` to `C:\python27\python.exe C:\git\SBS\stats.py --wincntxmnu -f "%1"`
+
 ### sbs.py
 3. To run the `sbs.py` script, use the following command:
 

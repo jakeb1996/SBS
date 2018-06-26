@@ -200,6 +200,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Plotter for the Software Benchmarking Script')
     parser.add_argument('-f', help='Results file as input (in csv format)')
     parser.add_argument('-t', help='Name of tool', default=None)
+    parser.add_argument('--wincntxmnu', help='Indicates SBS stats was launched from the Windows context menu. See README for help.', action='store_true')
     args = parser.parse_args()
 
+    # Not used
+    #if args.wincntxmnu:
+    #    args.t = raw_input('Enter the plot prefix: ')
+    
     main(args.f, args.t)

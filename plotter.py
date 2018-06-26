@@ -222,6 +222,10 @@ if __name__ == "__main__":
     parser.add_argument('-f', help='Results file as input (CSV)')
     parser.add_argument('-t', help='Name of tool to appear in graph titles', default=None)
     parser.add_argument('-c', help='File containing child spawning data (CSV)', default=None)
+    parser.add_argument('--wincntxmnu', help='Indicates SBS plotter was launched from the Windows context menu. See README for help.', action='store_true')
     args = parser.parse_args()
 
+    if args.wincntxmnu:
+        args.t = raw_input('Enter the plot prefix: ')
+    
     main(args.f, args.t, args.c)
