@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-import argparse, csv
+import argparse, csv, os, re
 
 def cpuPercentToDecimal(val):
     return (float(val) / 100.0)
@@ -7,7 +7,33 @@ def cpuPercentToDecimal(val):
 def byteToMegabyte(val):
     return (float(val) / 1024.0 / 1024.0)
 
-def main(resultsFile, toolName):
+def main(resultsFile, toolName, childProcessFile):    
+    
+    filesToPlot = []
+    plotTitles = []
+    
+    if os.path.isfile(resultsFile):
+        # the user must have defined an exact file to plot
+        filesToPlot.append(resultsFile)
+        plotTitles.append(toolName)
+    else:
+        # check if there are multiple files matching the criteria
+        dir = (os.sep).join(resultsFile.split(os.sep)[:-1])
+        fileNameStart = resultsFile.split(os.sep)[-1]
+        for (dirpath, dirnames, filenames) in os.walk(dir):
+            for filename in filenames:
+                reMatch = re.search('%s_((aggregate|system)|(\d)+)\\b' % fileNameStart, filename)
+                if bool(reMatch):
+                    filesToPlot.append(os.path.join(dirpath, filename))
+                    plotTitles.append('%s %s' %(toolName, reMatch.group(1).title()))
+    
+    # start plotting
+    i = 0
+    while i < len(filesToPlot):
+        plot(filesToPlot[i], plotTitles[i], None)
+        i = i + 1
+
+def plot(resultsFile, toolName, childProcessFile):
     print 'Running for: %s\n' % toolName
     
     ELAPSED_TIME = []
@@ -31,7 +57,8 @@ def main(resultsFile, toolName):
  #               'title' : 'Plot Title',
  #               'y-label' : 'Y-axis label'
  #       },
- # --- end sample ---       
+ # --- end sample ---      
+        ### START CHILD PROCESS PLOTS ###
         'num_threads' : {
                 'y-data' : [],
                 'title' : 'Number of Threads',
@@ -81,15 +108,37 @@ def main(resultsFile, toolName):
         },
         'child_process_count' : {
                 'y-data' : [],
-                'title' : 'Child Process Spawning',
+                'title' : 'Child Process Count',
                 'y-label' : 'Number of Child Processes'
-        }
+        },
+        
+        ### START SYSTEM PLOTS ###
+        # if the plot was defined above, then don't define it again
+        'mem_used' : {
+                'y-data' : [],
+                'y-data-type' : float,
+                'y-data-calc' : byteToMegabyte,
+                'title' : 'Physical Memory Used',
+                'y-label' : 'Memory Used (megabytes)'
+        },
+        'mem_avai' : {
+                'y-data' : [],
+                'title' : 'Physical Memory Available',
+                'y-label' : 'Memory Available (megabytes)',
+                'y-data-calc' : byteToMegabyte,
+        },
+        'process_count' : {
+                'y-data' : [],
+                'title' : 'System Process Count',
+                'y-label' : 'Number of Processes'
+        }        
     }
 
     # due to dictionaries not being in order, we need to know the order the data appears and
     # match it with the associated plot configuration above.
     headerOrder = []
     
+    firstTime = None
     with open(resultsFile, 'r') as fcsv:
         dataCsv = csv.reader(fcsv, delimiter=',')
 
@@ -97,9 +146,7 @@ def main(resultsFile, toolName):
         headerOrder = dataCsv.next()
         del headerOrder[0]
         
-        firstTime = None
         for row in dataCsv:
-            
             # Elapsed time
             if firstTime == None:
                 firstTime = row[0]
@@ -118,6 +165,16 @@ def main(resultsFile, toolName):
                     plots[plot]['y-data'].append(config['y-data-type-default'](yVal))
                 i += 1
 
+	# find child process start and end markers from file
+	childStartMarker = []
+	childEndMarker = []
+    if childProcessFile != None:
+        with open(childProcessFile, 'r') as fchpro:
+            dataCsv = csv.reader(fchpro, delimiter=',')
+            for row in dataCsv:
+                childStartMarker.append(float(row[1]) - float(firstTime))
+                childEndMarker.append(float(row[3]) - float(firstTime))
+	
     # start generating plots
     for plot in headerOrder:
         fig = plt.figure()
@@ -144,6 +201,12 @@ def main(resultsFile, toolName):
         # y axis label    
         fig.set_ylabel(plots[plot]['y-label'])
 
+		# draw on child process markers
+        markers = ['.', '^', '>', '<', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_']
+        for i in range(len(childStartMarker)):
+            fig.plot(childStartMarker[i], 0, color='g', marker=markers[i])
+            fig.plot(childEndMarker[i], 0, color='r', marker=markers[i])
+        
         # save to file
         outFig = fig.get_figure()
         outFigFileName = '%s_%s.png' % (resultsFile, plot)
@@ -156,8 +219,13 @@ def main(resultsFile, toolName):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Plotter for the Software Benchmarking Script')
-    parser.add_argument('-f', help='Results file as input (in csv format)')
+    parser.add_argument('-f', help='Results file as input (CSV)')
     parser.add_argument('-t', help='Name of tool to appear in graph titles', default=None)
+    parser.add_argument('-c', help='File containing child spawning data (CSV)', default=None)
+    parser.add_argument('--wincntxmnu', help='Indicates SBS plotter was launched from the Windows context menu. See README for help.', action='store_true')
     args = parser.parse_args()
 
-    main(args.f, args.t)
+    if args.wincntxmnu:
+        args.t = raw_input('Enter the plot prefix: ')
+    
+    main(args.f, args.t, args.c)
