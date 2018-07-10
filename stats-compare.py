@@ -8,7 +8,9 @@ def cpuPercentToDecimal(val):
     return (float(val) / 100.0)
     
 SBS_STATS_NUMBER_MEASUREMENTS = 10
-
+FULL_INPUT_SIZE_INTEGER = 61431566 
+SCATTER_LINE_WIDTH = 0.75
+PLOT_OUTPUT_DPI = 150
 VALID_TEST_INPUT_SIZES = ['500k', '1m', '5m', 'full']
 
 MEASUREMENTS_IN_RAW_DATA_FILES = ['time',
@@ -120,23 +122,30 @@ plots = {
 }
     
 class StatsHandlerClass():
-    def __init__(self, configFile):
+    def __init__(self, configFile, outputDirectory):
         self.init = True
-        
+        self.outputDir = outputDirectory
         self.tests = []
+        self.toolNames = []
+        
         
         if os.path.exists(configFile):
+            print 'Reading configuration file: %s' % configFile
             with open(configFile, 'r') as configFile:
                 configFileRaw = configFile.read()
                 
                 for line in configFileRaw.split('\n'):
                     lineSplit = line.split(',')
                     self.tests.append(Test(lineSplit[0], lineSplit[1], lineSplit[2], lineSplit[3], lineSplit[4], lineSplit[5]))
+                    
+                    if lineSplit[0] not in self.toolNames:
+                        self.toolNames.append(lineSplit[0])
         else:
             print 'configFile does not exist: %s' % configFile
+            exit()
     
     def drawInterToolPlots(self):
-        for testSize in [VALID_TEST_INPUT_SIZES[0]]:
+        for testSize in VALID_TEST_INPUT_SIZES:
             for measurement in PLOTTABLE_MEASUREMENTS:
                 
                 data = []
@@ -153,37 +162,116 @@ class StatsHandlerClass():
                 ### Box plot
                 fig = plt.figure(figsize=(16, 6))
                 fig = fig.add_subplot(111)
+                plt.yscale('log')
                 fig.boxplot(data, labels=legend, showfliers=False)
-                fig.set_title(plots[measurement]['title'])
+                fig.set_title('%s - %s' % (plots[measurement]['title'], testSize))
                 fig.set_ylabel(plots[measurement]['y-label'])
                 
                 
                 outFig = fig.get_figure()
-                outFigFileName = 'box_%s_%s.png' % (testSize, measurement)
-                outFig.savefig(outFigFileName)
+                outFigFileName = '%s/box_%s_%s.png' % (self.outputDir, testSize, measurement)
+                outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
                 print 'Wrote to: %s' % outFigFileName
-                del fig
+                plt.clf()
                 
                 ### Scatter plot
                 fig = plt.figure(figsize=(16, 6))
                 fig = fig.add_subplot(111)
                 for temp in data:
-                    fig.plot(temp)
-                fig.set_title(plots[measurement]['title'])
+                    fig.plot(temp, linewidth=SCATTER_LINE_WIDTH)
+                fig.set_title('%s - %s' % (plots[measurement]['title'], testSize))
                 fig.set_ylabel(plots[measurement]['y-label'])
+                fig.legend(self.toolNames, loc='center left', bbox_to_anchor=(1, 0.5)) 
                 
                 # save to file
                 outFig = fig.get_figure()
-                outFigFileName = 'scatter_%s_%s.png' % (testSize, measurement)
-                outFig.savefig(outFigFileName)
+                outFigFileName = '%s/scatter_%s_%s.png' % (self.outputDir, testSize, measurement)
+                outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
                 print 'Wrote to: %s' % outFigFileName
-                del fig
+                plt.clf()
                 
+            ### Run Time (for each test size)
+            legend = []
+            data = []
+            for test in self.tests:
+                if test.inputSize == testSize:
+                    data.append(max(test.measurements['time']) - min(test.measurements['time']))
+                    legend.append(test.toolName)
+                    
+            data, legend = self.sortDataAndLabelsDescending(legend, data)
+            
+            ### Bar plot
+            fig = plt.figure(figsize=(16, 6))
+            fig = fig.add_subplot(111)
+            fig.bar(legend, data)
+            fig.set_title('%s - %s' % ('Runtime', testSize))
+            fig.set_ylabel('Run Time (seconds)')
+            
+            # save to file
+            outFig = fig.get_figure()
+            outFigFileName = '%s/scatter_run-time_test-size-%s.png' % (self.outputDir, testSize)
+            outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
+            print 'Wrote to: %s' % outFigFileName
+            plt.clf()
+
+    def drawIntraToolPlots(self):
+        for tool in self.toolNames:
+            
+            ### Run Time (for each tool)
+            x = []
+            y = []
+            
+            for test in self.tests:
+                if test.toolName == tool:
+                    y.append(max(test.measurements['time']) - min(test.measurements['time']))
+                    x.append(test.intInputSize)
+
+            ### Scatter plot
+            fig = plt.figure(figsize=(16, 6))
+            fig = fig.add_subplot(111)
+            fig.plot(x, y, marker='o', linewidth=SCATTER_LINE_WIDTH)
+            fig.set_title('%s - %s' % ('Runtime', tool))
+            fig.set_ylabel('Run Time (seconds)')
+            
+            # save to file
+            outFig = fig.get_figure()
+            outFigFileName = '%s/run-time_%s.png' % (self.outputDir, tool)
+            outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
+            print 'Wrote to: %s' % outFigFileName
+            plt.clf()
+
+            
+        ### Run time (for all tools)
+        fig = plt.figure(figsize=(16, 6))
+        fig = fig.add_subplot(111)
+        fig.set_title('Run Time')
+        fig.set_ylabel('Run Time (seconds)')
+        for tool in self.toolNames:
+            x = []
+            y = []
+            for test in self.tests:
+                if test.toolName == tool:
+                    y.append(max(test.measurements['time']) - min(test.measurements['time']))
+                    x.append(test.intInputSize)
+            
+            fig.plot(x, y, marker='.', linewidth=SCATTER_LINE_WIDTH)
+        fig.legend(self.toolNames, loc='center left', bbox_to_anchor=(1, 0.5))   
+        # save to file
+        outFig = fig.get_figure()
+        outFigFileName = '%s/run-time_all-tools.png' % (self.outputDir)
+        outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
+        print 'Wrote to: %s' % outFigFileName
+        plt.clf()
+
+    def sortDataAndLabelsDescending(self, xLabels, yData):
+        return (list(t) for t in zip(*sorted(zip(yData, xLabels), reverse=True)))
+    
 class Test():
     def __init__(self, toolName, testNumber, inputSize, sbsPollingInterval, statsFileURL, rawDataFileURL):
         self.toolName = toolName
         self.testNumber = testNumber
         self.inputSize = inputSize
+        self.intInputSize = self._humanInputSizeToInteger(self.inputSize)
         self.sbsPollingInterval = sbsPollingInterval
         self.statsFileURL = statsFileURL
         self.rawDataFileURL = rawDataFileURL
@@ -194,6 +282,7 @@ class Test():
         
     def loadRawDataFile(self):
         if os.path.exists(self.rawDataFileURL):
+            print 'Reading data file: %s' % self.rawDataFileURL
             with open(self.rawDataFileURL, 'r') as rawDataFile:
                 rawDataFile = rawDataFile.read()
                 
@@ -211,30 +300,36 @@ class Test():
                             i = i + 1
         else:
             print 'rawDataFile does not exist: %s' % self.rawDataFileURL
+            exit()
 
-
-class SbsStats():
-    def __init__(self, inLen, inMin, inQ1, inMed, inAvg, inQ3, inMax, inStd):
-        self.valLen = inLen
-        self.valMin = inMin
-        self.valQ1 = inQ1
-        self.valMed = inMed
-        self.valAvg = inAvg
-        self.valQ3 = inQ3
-        self.valMax = inMax
-        self.valStd = inStd
-
-def main(configFile, mode):    
+    def _humanInputSizeToInteger(self, humanInputSize):
+        if humanInputSize == 'full':
+            return FULL_INPUT_SIZE_INTEGER
+        suffixes = {'k' : 1000, 'm' : 1000000, 'g': 1000000000}
+        return int(humanInputSize[:-1]) * suffixes[humanInputSize[-1]]
+        
+        
+        
+def main(configFile, outputDirectory):    
     
-    statsHandler = StatsHandlerClass(configFile)
+    statsHandler = StatsHandlerClass(configFile, outputDirectory)
 
+    print 'Drawing inter-tool plots...'
     statsHandler.drawInterToolPlots()
+    
+    print 'Drawing intra-tool plots...'
+    statsHandler.drawIntraToolPlots()
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Aggregate Plotter for the Software Benchmarking Script')
-    parser.add_argument('-c', help='Configuration file (csv formatted: [toolName,testNumber,inputSize,sbsPollingInterval,statsFileURL])')
+    parser.add_argument('-c', help='Configuration file (csv formatted: [toolName,testNumber,inputSize,sbsPollingInterval,statsFileURL])', required=True)
     parser.add_argument('-m', help='Inter-tool (comparing same size test from different tools), Intra-tool (comparing different size tests from same tool) [inter|intra]')
+    parser.add_argument('-o', help='Output directory (default: current)', required=True)
+    parser.add_argument('-dpi', help='Output plot DPI (default: %s)' % (PLOT_OUTPUT_DPI))
     parser.add_argument('--wincntxmnu', help='Indicates SBS stats was launched from the Windows context menu. See README for help.', action='store_true')
     args = parser.parse_args()
     
-    main(args.c, args.m)
+    if args.dpi != None:
+        PLOT_OUTPUT_DPI = int(args.dpi)
+    
+    main(args.c, args.o)
