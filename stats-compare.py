@@ -127,8 +127,7 @@ class StatsHandlerClass():
         self.outputDir = outputDirectory
         self.tests = []
         self.toolNames = []
-        
-        
+
         if os.path.exists(configFile):
             print 'Reading configuration file: %s' % configFile
             with open(configFile, 'r') as configFile:
@@ -144,11 +143,16 @@ class StatsHandlerClass():
             print 'configFile does not exist: %s' % configFile
             exit()
     
-    def drawInterToolPlots(self):
+    
+    
+    
+    
+    def drawSystemResourcesBoxScatterPerTool(self):
         for testSize in VALID_TEST_INPUT_SIZES:
             for measurement in PLOTTABLE_MEASUREMENTS:
                 
                 data = []
+                timePoints = []
                 legend = []
                 
                 for test in self.tests:
@@ -158,11 +162,12 @@ class StatsHandlerClass():
                         else:
                             data.append(test.measurements[measurement])
                         legend.append(test.toolName)
+                        timePoints.append(test.elapsedTimePoints)
                 
-                ### Box plot
+                ### Box plot (x-axis: tool-name, y-axis: system resource measurement)
                 fig = plt.figure(figsize=(16, 6))
                 fig = fig.add_subplot(111)
-                plt.yscale('log')
+                #plt.yscale('log')
                 fig.boxplot(data, labels=legend, showfliers=False)
                 fig.set_title('%s - %s' % (plots[measurement]['title'], testSize))
                 fig.set_ylabel(plots[measurement]['y-label'])
@@ -174,14 +179,17 @@ class StatsHandlerClass():
                 print 'Wrote to: %s' % outFigFileName
                 plt.clf()
                 
-                ### Scatter plot
+                ### Scatter plot (x-axis: tool-name, y-axis: system resource measurement)
                 fig = plt.figure(figsize=(16, 6))
                 fig = fig.add_subplot(111)
-                for temp in data:
-                    fig.plot(temp, linewidth=SCATTER_LINE_WIDTH)
+                i = 0
+                while i < len(data):
+                    fig.plot(timePoints[i], data[i], linewidth=SCATTER_LINE_WIDTH)
+                    i = i + 1
                 fig.set_title('%s - %s' % (plots[measurement]['title'], testSize))
                 fig.set_ylabel(plots[measurement]['y-label'])
-                fig.legend(self.toolNames, loc='center left', bbox_to_anchor=(1, 0.5)) 
+                fig.set_xlabel('Elapsed Time (seconds)')
+                fig.legend(legend, loc='center left', bbox_to_anchor=(1, 0.5)) 
                 
                 # save to file
                 outFig = fig.get_figure()
@@ -189,8 +197,8 @@ class StatsHandlerClass():
                 outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
                 print 'Wrote to: %s' % outFigFileName
                 plt.clf()
-                
-            ### Run Time (for each test size)
+
+            ### Run Time (bar graph - x: tool name, y: run time)
             legend = []
             data = []
             for test in self.tests:
@@ -199,8 +207,7 @@ class StatsHandlerClass():
                     legend.append(test.toolName)
                     
             data, legend = self.sortDataAndLabelsDescending(legend, data)
-            
-            ### Bar plot
+
             fig = plt.figure(figsize=(16, 6))
             fig = fig.add_subplot(111)
             fig.bar(legend, data)
@@ -209,15 +216,106 @@ class StatsHandlerClass():
             
             # save to file
             outFig = fig.get_figure()
-            outFigFileName = '%s/scatter_run-time_test-size-%s.png' % (self.outputDir, testSize)
+            outFigFileName = '%s/bar_run-time_test-size-%s.png' % (self.outputDir, testSize)
             outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
             print 'Wrote to: %s' % outFigFileName
             plt.clf()
-
+    
+    def drawRunTimeBoxLogLinearPerInputSize(self):
+        ### Run time (box plot - x: input size, y: run time) 
+        legend = VALID_TEST_INPUT_SIZES
+        data = [] #[[]] * len(VALID_TEST_INPUT_SIZES) # [[], [], []]
+        for i in VALID_TEST_INPUT_SIZES:
+            data.append([])
+        
+        for test in self.tests:
+            data[VALID_TEST_INPUT_SIZES.index(test.inputSize)].append(test.elapsedTimePoints[-1]) 
+        # linear y scale
+        fig = plt.figure(figsize=(16, 6))
+        fig = fig.add_subplot(111)
+        fig.boxplot(data, labels=legend, showfliers=False)
+        fig.set_title('Run time vs Input size')
+        fig.set_ylabel('Run Time (seconds)')
+        fig.set_xlabel('Input Size')
+        plt.grid(True, which='both', axis='both', color='#e8e8e8')
+        
+        outFig = fig.get_figure()
+        outFigFileName = '%s/box_run-time_all-tools_linear.png' % (self.outputDir)
+        outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
+        print 'Wrote to: %s' % outFigFileName
+        plt.clf()
+        
+        # same plot, log y scale
+        fig = plt.figure(figsize=(16, 6))
+        fig = fig.add_subplot(111)
+        fig.boxplot(data, labels=legend, sym='+')
+        fig.set_title('Run time vs Input size')
+        fig.set_ylabel('Run Time (seconds)')
+        fig.set_xlabel('Input Size')
+        plt.yscale('log')
+        plt.grid(True, axis='y', color='#e8e8e8')
+        
+        outFig = fig.get_figure()
+        outFigFileName = '%s/box_run-time_all-tools_log.png' % (self.outputDir)
+        outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
+        print 'Wrote to: %s' % outFigFileName
+        plt.clf()
+    
+    def drawRunTimeScatterOfAllTools(self):
+        ### Run time (scatter - x: input size, y: run time)
+        fig = plt.figure(figsize=(16, 6))
+        fig = fig.add_subplot(111)
+        fig.set_title('Run Time')
+        fig.set_ylabel('Run Time (seconds)')
+        fig.set_xlabel('Input Size')
+        legend = []
+        for tool in self.toolNames:
+            x = []
+            y = []
+            for test in self.tests:
+                if test.toolName == tool:
+                    y.append(max(test.measurements['time']) - min(test.measurements['time']))
+                    x.append(test.intInputSize)
+            
+            
+            if True:#tool in ['CT-Finder', 'WU-CRISPR', 'CRISPR-DO', 'CHOP-CHOP']: #len(y) == 4 and tool not in ['GuideScan']:# and tool not in ['sgRNA Scorer 2.0', 'GT-Scan', 'CRISPOR', 'CT-Finder']:
+                legend.append(tool)
+                fig.plot(x, y, marker='.', linewidth=SCATTER_LINE_WIDTH)
+        fig.legend(legend, loc='center left', bbox_to_anchor=(1, 0.5))   
+        # save to file
+        outFig = fig.get_figure()
+        outFigFileName = '%s/scatter_run-time_all-tools.png' % (self.outputDir)
+        outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
+        print 'Wrote to: %s' % outFigFileName
+        plt.clf()
+    
+    def drawSbsPlotterForAllTools(self):
+        for test in self.tests:
+            toolName = '%s_%s' % (test.toolName, test.inputSize)
+            outputPrefix = '%s/tool_%s' % (self.outputDir, toolName)
+            os.system("python plotter.py -f %s -t %s -o %s" % (test.rawDataFileURL, toolName, outputPrefix))
+    
+    def drawInterToolPlots(self):
+        # [comparing tools (ie: x-axis: tool name)]  
+        #self.drawSystemResourcesBoxScatterPerTool()
+        
+        # [comparing input size (ie: x-axis: input size)]
+        #self.drawRunTimeBoxLogLinearPerInputSize()
+        
+        #self.drawRunTimeScatterOfAllTools()
+        
+        
+        self.drawSbsPlotterForAllTools()
+        
+        
+        
+        
+        
     def drawIntraToolPlots(self):
+        # [per tool]
         for tool in self.toolNames:
             
-            ### Run Time (for each tool)
+            ### Run Time (scatter - x: input size, y: run time)
             x = []
             y = []
             
@@ -232,36 +330,14 @@ class StatsHandlerClass():
             fig.plot(x, y, marker='o', linewidth=SCATTER_LINE_WIDTH)
             fig.set_title('%s - %s' % ('Runtime', tool))
             fig.set_ylabel('Run Time (seconds)')
+            fig.set_xlabel('Input Size')
             
             # save to file
             outFig = fig.get_figure()
-            outFigFileName = '%s/run-time_%s.png' % (self.outputDir, tool)
+            outFigFileName = '%s/scatter_run-time_%s.png' % (self.outputDir, tool)
             outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
             print 'Wrote to: %s' % outFigFileName
             plt.clf()
-
-            
-        ### Run time (for all tools)
-        fig = plt.figure(figsize=(16, 6))
-        fig = fig.add_subplot(111)
-        fig.set_title('Run Time')
-        fig.set_ylabel('Run Time (seconds)')
-        for tool in self.toolNames:
-            x = []
-            y = []
-            for test in self.tests:
-                if test.toolName == tool:
-                    y.append(max(test.measurements['time']) - min(test.measurements['time']))
-                    x.append(test.intInputSize)
-            
-            fig.plot(x, y, marker='.', linewidth=SCATTER_LINE_WIDTH)
-        fig.legend(self.toolNames, loc='center left', bbox_to_anchor=(1, 0.5))   
-        # save to file
-        outFig = fig.get_figure()
-        outFigFileName = '%s/run-time_all-tools.png' % (self.outputDir)
-        outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
-        print 'Wrote to: %s' % outFigFileName
-        plt.clf()
 
     def sortDataAndLabelsDescending(self, xLabels, yData):
         return (list(t) for t in zip(*sorted(zip(yData, xLabels), reverse=True)))
@@ -277,7 +353,7 @@ class Test():
         self.rawDataFileURL = rawDataFileURL
         
         self.measurements = {}
-        
+        self.elapsedTimePoints = []
         self.loadRawDataFile()
         
     def loadRawDataFile(self):
@@ -291,6 +367,7 @@ class Test():
                     self.measurements[measurement] = []
                 
                 # extract data line by line from CSV (skip header line)
+                firstTimePoint = 0
                 for line in rawDataFile.split('\n')[1:]:
                     if len(line) > 0:
                         lineSplit = line.split(',')
@@ -298,6 +375,10 @@ class Test():
                         for measurement in MEASUREMENTS_IN_RAW_DATA_FILES:
                             self.measurements[measurement].append(float(lineSplit[i]))
                             i = i + 1
+                        if firstTimePoint == 0:
+                            firstTimePoint = float(lineSplit[0])
+                        self.elapsedTimePoints.append(float(lineSplit[0]) - firstTimePoint)
+                        
         else:
             print 'rawDataFile does not exist: %s' % self.rawDataFileURL
             exit()
@@ -317,7 +398,7 @@ def main(configFile, outputDirectory):
     print 'Drawing inter-tool plots...'
     statsHandler.drawInterToolPlots()
     
-    print 'Drawing intra-tool plots...'
+    #print 'Drawing intra-tool plots...'
     statsHandler.drawIntraToolPlots()
     
 if __name__ == "__main__":
