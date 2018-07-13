@@ -297,12 +297,12 @@ class StatsHandlerClass():
     
     def drawInterToolPlots(self):
         # [comparing tools (ie: x-axis: tool name)]  
-        #self.drawSystemResourcesBoxScatterPerTool()
+        self.drawSystemResourcesBoxScatterPerTool()
         
         # [comparing input size (ie: x-axis: input size)]
-        #self.drawRunTimeBoxLogLinearPerInputSize()
+        self.drawRunTimeBoxLogLinearPerInputSize()
         
-        #self.drawRunTimeScatterOfAllTools()
+        self.drawRunTimeScatterOfAllTools()
         
         
         self.drawSbsPlotterForAllTools()
