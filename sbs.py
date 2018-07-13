@@ -61,6 +61,8 @@ class SbsProcess(psutil.Process):
         self.measurements = []
         self._cmd = ' '.join(self._process.cmdline())
         self._launchTime = self._process.create_time()
+        self.isSbsProcessTheParent = isSbsProcessTheParent
+        self.isCmdBash = isCmdBash
         
         mName = [
             'time',
@@ -107,7 +109,7 @@ class SbsProcess(psutil.Process):
                     childProcessCount = len(self._process.children())
                     threadCount = self._process.num_threads()
                     
-                    if isSbsProcessTheParent and isCmdBash:
+                    if self.isSbsProcessTheParent and self.isCmdBash:
                         childProcessCount = childProcessCount - 1
                         threadCount = threadCount - 1
                     
