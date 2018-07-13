@@ -1,4 +1,4 @@
-import psutil, time, argparse, os, signal, sys, re
+import psutil, time, argparse, os, signal, sys, re, random
 from subprocess import PIPE
 
 MEASUREMENT_TYPE_INSTANT = 1
@@ -324,7 +324,10 @@ class SbsOutputRow():
   
   
 def getProcessName(objPsutilProcess):
-    return '%s%s%s' % (objPsutilProcess.pid, objPsutilProcess.create_time(), '"%s"'%(' '.join(objPsutilProcess.cmdline())))
+    if objPsutilProcess.is_running():
+        return '%s%s%s' % (objPsutilProcess.pid, objPsutilProcess.create_time(), '"%s"'%(' '.join(objPsutilProcess.cmdline())))
+    else:
+        return random.randint(1, 10000000) # process has died, just assign a random number. hopefully we don't have a conflict later ^.^
 
 	
 def main(cmd, sleepTime, loggable, cmdIsBash):
