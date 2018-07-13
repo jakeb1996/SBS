@@ -54,7 +54,7 @@ class SbsProcess(psutil.Process):
     # public
     name = None
 
-    def __init__(self, pid, outputMeasurementsToFile=True, *args, **kwargs):
+    def __init__(self, pid, outputMeasurementsToFile=True, isSbsProcessTheParent=False, isCmdBash=False, *args, **kwargs):
         super(SbsProcess, self).__init__(*args, **kwargs)
         self._process = psutil.Process(pid)
         self.name = getProcessName(self._process)
@@ -241,10 +241,11 @@ class SbsSystemStatus():
         
 class SbsProcessHandlerClass():
     # there should only be one instance of this class (why doesn't python support static classes)
-    def __init__(self, parentPid):
-        self._parent = SbsProcess(parentPid)
+    def __init__(self, parentPid, cmdIsBash):
+        self._parent = SbsProcess(parentPid, isSbsProcessTheParent=True, isCmdBash=cmdIsBash)
         self._children = []
         self._system = SbsSystemStatus()
+        self._cmdIsBash = cmdIsBash
         
     def addChild(self, childPid):
         self._children.append(SbsProcess(childPid))
@@ -317,7 +318,7 @@ def getProcessName(objPsutilProcess):
     return '%s%s%s' % (objPsutilProcess.pid, objPsutilProcess.create_time(), '"%s"'%(' '.join(objPsutilProcess.cmdline())))
 
 	
-def main(cmd, sleepTime, loggable):
+def main(cmd, sleepTime, loggable, cmdIsBash):
     global SbsProcessHandler
     global LAST_UPDATE_MEASUREMENTS
     # check if file exists. It'd be terrible to overwrite experiment data.
@@ -339,7 +340,7 @@ def main(cmd, sleepTime, loggable):
     try:
         # now that the parent process has started, lets have the SbsProcessHandler take control.
         # this is globally declared so that we can safely destroy everything when needed.
-        SbsProcessHandler = SbsProcessHandlerClass(parentProcess.pid)
+        SbsProcessHandler = SbsProcessHandlerClass(parentProcess.pid, cmdIsBash)
         print 'SbsProcessHandler Parent ID: %s ' % SbsProcessHandler.getParent().getPid()
     except Exception as e:
         print e
@@ -430,6 +431,7 @@ if __name__ == "__main__":
     parser.add_argument('-o', help='Output file location and name', default=None, required=True)
     parser.add_argument('-s', help='Time to sleep (sec) (default=1)', type=float, default=1)
     parser.add_argument('-l', help='Flush output buffer on each poll (allows output to be tail\'able) (y/n) (default=n)', type=str, default='n')
+    parser.add_argument('--cmdIsBash', help='The command passed into -c is a shell script. This will cause the thread and process count to be 1 above actual.', const=True, default=False, nargs='?')
     args = parser.parse_args()
 
     OUTPUT_FIL = args.o
@@ -441,7 +443,7 @@ if __name__ == "__main__":
     try:
         print '\nSBS initialising at %s (PID = %s)\nwith args:\n%s\n' % (time.time(), os.getpid(), args)
         SbsProcessHandler = None # just initialise this for now
-        main(args.c, args.s, args.l)
+        main(args.c, args.s, args.l, args.cmdIsBash)
     except KeyboardInterrupt:
         # tidy up
         print '\n\nInterrupted. Tidying up...'
