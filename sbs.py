@@ -68,7 +68,7 @@ class SbsProcess(psutil.Process):
             # so we will just use the next best thing
             self._launchTime = time.time()
             self._processIsRunning = False
-        self.sbsProcessID = int(time.time() / 1000) * random.randint(0, 1000)
+        self._sbsProcessID = int(time.time() / 1000) * random.randint(0, 1000)
         self.name = getProcessName(self._process)
         self.measurements = []
         self.isSbsProcessTheParent = isSbsProcessTheParent
@@ -311,7 +311,7 @@ class SbsProcessHandlerClass():
             if len(self.getChildren()) > 0:
                 print '\nDeleting children SbsProcess...'
                 for child in self.getChildren():
-                    print child.getPid()
+                    print child.getPid()                    
                     try:
                         fCmdLog.write('PID %s launched at %s\n\t%s\n' % (child.getPid(), child.getLaunchTime(), child.getCmd()))
                         fCmdLogPlot.write('%s,%s,%s\n' % (child.getPid(), child.getLaunchTime(), child.getLastIsRunningTime()))
@@ -380,9 +380,10 @@ def main(cmd, sleepTime, loggable, cmdIsBash):
             quit()   
         print 'SBS will only overwrite the aggregate file and not the associated CSV files.'
         
+    parentStdOutFile = open('%s_parent_stdout' % (OUTPUT_FIL), 'w+')
     try:
         # using psutil, start the process. 
-        parentProcess = psutil.Popen(cmd.split(' '))
+        parentProcess = psutil.Popen(cmd.split(' '), stdout=parentStdOutFile)
     except Exception as e:
         # oops, something went wrong.
         print e
@@ -469,6 +470,10 @@ def main(cmd, sleepTime, loggable, cmdIsBash):
 		
         # seems like the parent process has ended.
         print 'Parent process ended (or became a zombie). Exiting.'
+        
+        print 'Writing parent STDOUT to file...'
+        parentStdOutFile.flush()
+        parentStdOutFile.close()
         
         print '\n\nStarting cleanup...'
         
