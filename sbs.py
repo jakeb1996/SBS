@@ -51,7 +51,8 @@ class SbsProcess(psutil.Process):
     _numberOfMeasurementUpdates = 0
     _last_isRunning = None
     _processIsRunning = False
-    
+    _processID = None
+    _sbsProcessID = None
     # public
     name = None
 
@@ -61,9 +62,13 @@ class SbsProcess(psutil.Process):
             self._process = psutil.Process(pid)
             self._cmd = ' '.join(self._process.cmdline())
             self._launchTime = self._process.create_time()
+            self._processID = self._process.pid
         except psutil.NoSuchProcess as e:
+            # the process ended already and we could not get an accurate start time
+            # so we will just use the next best thing
+            self._launchTime = time.time()
             self._processIsRunning = False
-            
+        self.sbsProcessID = int(time.time() / 1000) * random.randint(0, 1000)
         self.name = getProcessName(self._process)
         self.measurements = []
         self.isSbsProcessTheParent = isSbsProcessTheParent
@@ -101,15 +106,16 @@ class SbsProcess(psutil.Process):
         i = 0
         while i < len(mName):
             if outputMeasurementsToFile:
-                fileName = '%s_%s_%s' % (OUTPUT_FIL, self._process.pid, mName[i])
+                fileName = '%s_%s_%s' % (OUTPUT_FIL, self.getPid(), mName[i])
             self.measurements.append(SbsMeasurement(mName[i], mType[i], fileName))
             i = i + 1
             
-        print 'Process launched [PID: %s, Start: %s]: %s\n' % (pid, self._launchTime, self._cmd)
+        print 'Process launched [PID: %s, IsRunning: %s, Start: %s]: %s\n' % (self.getPid(), self._processIsRunning, self._launchTime, self._cmd)
 
     def updateMeasurements(self):
         global LAST_UPDATE_MEASUREMENTS
         if self.isRunning():
+            # Catch any PSUtil exceptions
             try:
                 with self._process.oneshot():
                     mem = self._process.memory_info()
@@ -148,8 +154,7 @@ class SbsProcess(psutil.Process):
             except Exception as e: # (should this be an else clause?)
                 # Catch a generic exception
                 self._processIsRunning = False
-                print 'Failed to update measurements for: %s' % self._process.pid
-                print '%s owns the process' % self._process.username()
+                print 'Failed to update measurements for: %s' % self.getPid()
         else:
             self._processIsRunning = False
             
@@ -168,19 +173,24 @@ class SbsProcess(psutil.Process):
     def isRunning(self):
         try:
             self._processIsRunning = (self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE)
-        except psutil.NoSuchProcess as e:
+        except (psutil.NoSuchProcess, AttributeError) as e:
             self._processIsRunning = False
+        
         return self._processIsRunning
 
     def getPid(self):
-        return self._process.pid
+        if self._processID == None:
+            return self._sbsProcessID 
+        return self._processID
     
     def getLastIsRunningTime(self):
+        if self._last_isRunning == None:
+            return self.getLaunchTime()
         return self._last_isRunning
     
     def __del__(self):
         try:
-            fileName = '%s_%s' % (OUTPUT_FIL, self._process.pid)
+            fileName = '%s_%s' % (OUTPUT_FIL, self.getPid())
             with open(fileName, 'w+') as fcsv:
                 fcsv.write('%s\n' % (','.join(self.getMeasurementNamesList())))
                 for i in xrange(self._numberOfMeasurementUpdates):
@@ -351,10 +361,13 @@ class SbsOutputRow():
   
   
 def getProcessName(objPsutilProcess):
-    if objPsutilProcess.is_running():
-        return '%s%s%s' % (objPsutilProcess.pid, objPsutilProcess.create_time(), '"%s"'%(' '.join(objPsutilProcess.cmdline())))
-    else:
-        return random.randint(1, 10000000) # process has died, just assign a random number. hopefully we don't have a conflict later ^.^
+    # to begin, assume the process has ended. assign it a random number
+    processName = int(time.time())
+    try:
+        processName = '%s%s%s' % (objPsutilProcess.pid, objPsutilProcess.create_time(), '"%s"'%(' '.join(objPsutilProcess.cmdline())))
+    except Exception as e:
+        pass # as above
+    return processName
 
 	
 def main(cmd, sleepTime, loggable, cmdIsBash):
@@ -403,22 +416,29 @@ def main(cmd, sleepTime, loggable, cmdIsBash):
             # find all children of parent (grandchildren too, etc)
             for child in SbsProcessHandler.getParent().children(recursive=True):
             
-                # make sure the child is still running and is not a zombie
-                # we cannot call SbsProcess.isRunning() because this is still a native psutil class,
-                # and not a SbsProcess. We will convert it soon. (instead, use the psutil.Process.is_running() method)
-                if child.is_running() and child.status() != psutil.STATUS_ZOMBIE and child.pid != SbsProcessHandler.getParent().getPid():
-                
-                    # check to see if we've seen this child before
-                    # note: we're going to miss any children that are launched and end between this check. Notably, we sleep for 1 sec
-                    # before analysing again.                  
-                    for existChild in SbsProcessHandler.getChildren():
-                        if existChild.name == getProcessName(child):
-                            # we have seen it before, don't worry about it. move onto next child.
-                            break
-                            
-                    # only reach here if we have not seen the child yet. make a record of it
-                    SbsProcessHandler.addChild(child.pid)
-            
+                # we're using psutil methods here, prepare for an exception!
+                try:
+                    # make sure the child is still running and is not a zombie
+                    # we cannot call SbsProcess.isRunning() because this is still a native psutil class,
+                    # and not a SbsProcess. We will convert it soon. (instead, use the psutil.Process.is_running() method)
+                    if child.is_running() and child.status() != psutil.STATUS_ZOMBIE and child.pid != SbsProcessHandler.getParent().getPid():
+                    
+                        # check to see if we've seen this child before
+                        # note: we're going to miss any children that are launched and end between this check. Notably, we sleep for 1 sec
+                        # before analysing again.      
+                        seenChildAlready = False
+                        for existChild in SbsProcessHandler.getChildren():
+                            if existChild.name == getProcessName(child):
+                                # we have seen it before, don't worry about it. move onto next child.
+                                seenChildAlready = True
+                                break
+                                
+                        # only reach here if we have not seen the child yet. make a record of it
+                        if seenChildAlready == False:
+                            SbsProcessHandler.addChild(child.pid)
+                except psutil.NoSuchProcess as e:
+                    pass # the child ended, move to the next one
+                    
             # Now we need to achieve the following:
             #   - update the measurements for the parent process and all children
             #   - using the parents data as a basis, start aggregating with child measurements
