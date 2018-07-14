@@ -50,19 +50,25 @@ class SbsProcess(psutil.Process):
     _stdout = None
     _numberOfMeasurementUpdates = 0
     _last_isRunning = None
+    _processIsRunning = False
     
     # public
     name = None
 
     def __init__(self, pid, outputMeasurementsToFile=True, isSbsProcessTheParent=False, isCmdBash=False, *args, **kwargs):
         super(SbsProcess, self).__init__(*args, **kwargs)
-        self._process = psutil.Process(pid)
+        try:
+            self._process = psutil.Process(pid)
+            self._cmd = ' '.join(self._process.cmdline())
+            self._launchTime = self._process.create_time()
+        except psutil.NoSuchProcess as e:
+            self._processIsRunning = False
+            
         self.name = getProcessName(self._process)
         self.measurements = []
-        self._cmd = ' '.join(self._process.cmdline())
-        self._launchTime = self._process.create_time()
         self.isSbsProcessTheParent = isSbsProcessTheParent
         self.isCmdBash = isCmdBash
+        self._processIsRunning = True
         
         mName = [
             'time',
@@ -89,6 +95,9 @@ class SbsProcess(psutil.Process):
             MEASUREMENT_TYPE_INSTANT
         ]
 
+        # Setup SbsMeasurement objects for each set of data we're collecting
+        # ie: for all those defined in mName. This is where it gets messy
+        # because it is hard coded.
         i = 0
         while i < len(mName):
             if outputMeasurementsToFile:
@@ -109,10 +118,14 @@ class SbsProcess(psutil.Process):
                     childProcessCount = len(self._process.children())
                     threadCount = self._process.num_threads()
                     
+                    # in the case that the command SBS has launched is simply
+                    # a bash script then we don't want the process & thread count
+                    # to be artificially high by one, so reduce it as necessary.
                     if self.isSbsProcessTheParent and self.isCmdBash:
                         childProcessCount = childProcessCount - 1
                         threadCount = threadCount - 1
                     
+                    # hard coded: fix this one day please.
                     self.measurements[0].update(LAST_UPDATE_MEASUREMENTS)
                     self.measurements[1].update(threadCount)
                     self.measurements[2].update(self._process.cpu_percent())
@@ -126,10 +139,20 @@ class SbsProcess(psutil.Process):
                     
                     self._numberOfMeasurementUpdates = self._numberOfMeasurementUpdates + 1
                     self._last_isRunning = LAST_UPDATE_MEASUREMENTS
-            except Exception as e:
+            except psutil.NoSuchProcess:
+                # Edge case however if the psutil.NoSuchProcess exception is not
+                # caught by SbsProcess.isRunning() then we might have to catch it
+                # here too. Some times this occurs because the process has ended
+                # in between checking (hmm). 
+                self._processIsRunning = False
+            except Exception as e: # (should this be an else clause?)
+                # Catch a generic exception
+                self._processIsRunning = False
                 print 'Failed to update measurements for: %s' % self._process.pid
                 print '%s owns the process' % self._process.username()
-                
+        else:
+            self._processIsRunning = False
+            
     def getMeasurements(self):
         return self.measurements
 
@@ -143,7 +166,11 @@ class SbsProcess(psutil.Process):
         return [m.name for m in self.measurements]
         
     def isRunning(self):
-        return (self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE)
+        try:
+            self._processIsRunning = (self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE)
+        except psutil.NoSuchProcess as e:
+            self._processIsRunning = False
+        return self._processIsRunning
 
     def getPid(self):
         return self._process.pid
@@ -368,7 +395,7 @@ def main(cmd, sleepTime, loggable, cmdIsBash):
         # we want to keep track of all child processes, forever.
         childProcessHistory = []
         
-        firstFileWrite = True
+        fData.write('%s\n' % (','.join(SbsProcessHandler.getParent().getMeasurementNamesList())))
         
         # make sure the parent is still running. if so, monitor it and its children.
         while SbsProcessHandler.getParent().isRunning():
@@ -383,18 +410,14 @@ def main(cmd, sleepTime, loggable, cmdIsBash):
                 
                     # check to see if we've seen this child before
                     # note: we're going to miss any children that are launched and end between this check. Notably, we sleep for 1 sec
-                    # before analysing again.
-                    seenChildAlready = False
-                    
+                    # before analysing again.                  
                     for existChild in SbsProcessHandler.getChildren():
                         if existChild.name == getProcessName(child):
-                            # we have, don't worry about it. move onto next child.
-                            seenChildAlready = True
+                            # we have seen it before, don't worry about it. move onto next child.
                             break
                             
                     # only reach here if we have not seen the child yet. make a record of it
-                    if seenChildAlready == False:
-                        SbsProcessHandler.addChild(child.pid)
+                    SbsProcessHandler.addChild(child.pid)
             
             # Now we need to achieve the following:
             #   - update the measurements for the parent process and all children
@@ -414,13 +437,7 @@ def main(cmd, sleepTime, loggable, cmdIsBash):
                 outputMeasurements.addChildData(child)
                     
             print outputMeasurements.toCsv()
-            
-            # monitoring of parent and children complete for this iteration. write data to file.
-            if firstFileWrite == True:
-                # write CSV headers
-                fData.write('%s\n' % (','.join(SbsProcessHandler.getParent().getMeasurementNamesList())))
-                firstFileWrite = False
-                
+
             fData.write('%s\n' % outputMeasurements.toCsv())
             
             # flush the write buffer if the user desires
