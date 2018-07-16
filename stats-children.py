@@ -46,10 +46,12 @@ def main(args):
                         plotTitlePrefix = '%s %s' % (configLineSplit[0], configLineSplit[1])
                         
                         # Pie: one chart per tool. each slice is a unique process.
-                        #plotChildProcessWallTimesPie(outputDirectory, filePrefix, plotTitlePrefix, results)
+                        plotChildProcessWallTimesPie(outputDirectory, filePrefix, plotTitlePrefix, results)
                         
-        # Bar: one chart per process type (terms). x-axis: tool name, y-axis: time
-        plotTimeInClassifiedChildBar(outputDirectory, data, terms)
+        
+        if plotData:
+            # Bar: one chart per process type (terms). x-axis: tool name, y-axis: time
+            plotTimeInClassifiedChildBar(outputDirectory, data, terms)
 
 def plotChildProcessWallTimesPie(outputDirectory, filePrefix, plotTitlePrefix, results):
     fig = plt.figure(figsize=(8, 8))
@@ -57,20 +59,22 @@ def plotChildProcessWallTimesPie(outputDirectory, filePrefix, plotTitlePrefix, r
     fig.set_title('Wall Time Distribution %s' % plotTitlePrefix)
     legend = results['classifiedChildTimes'].keys()
     data = results['classifiedChildTimes'].values()
+    
     # make it a percentage
     data = [x / results['totalCpuTime'] for x in data]
     
-    legend.append('Unknown')
-    data.append((results['totalCpuTime'] - results['totalClassifiedChildTime']) / results['totalCpuTime'])
-    fig.pie(data)
-    fig.legend(legend)
-    
-    # save to file
-    outFig = fig.get_figure()
-    outFigFileName = '%spie_cpu_time_%s.png' % (outputDirectory, filePrefix)
-    outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
-    print 'Wrote to: %s' % outFigFileName
-    plt.clf()
+    if len(legend) > 0:
+        legend.append('Unknown')
+        data.append((results['totalCpuTime'] - results['totalClassifiedChildTime']) / results['totalCpuTime'])
+        fig.pie(data)
+        fig.legend(legend)
+        
+        # save to file
+        outFig = fig.get_figure()
+        outFigFileName = '%spie_cpu_time_%s.png' % (outputDirectory, filePrefix)
+        outFig.savefig(outFigFileName, dpi=PLOT_OUTPUT_DPI)
+        print 'Wrote to: %s' % outFigFileName
+        plt.clf()
                         
 def plotTimeInClassifiedChildBar(filePrefix, inputData, terms):
     for testSize in ['500k', '1m', '5m', 'full']:
