@@ -7,7 +7,7 @@ def cpuPercentToDecimal(val):
 def byteToMegabyte(val):
     return (float(val) / 1024.0 / 1024.0)
 
-def main(resultsFile, toolName, childProcessFile):    
+def main(resultsFile, toolName, childProcessFile, outputPrefix):    
     
     filesToPlot = []
     plotTitles = []
@@ -30,10 +30,10 @@ def main(resultsFile, toolName, childProcessFile):
     # start plotting
     i = 0
     while i < len(filesToPlot):
-        plot(filesToPlot[i], plotTitles[i], None)
+        plot(filesToPlot[i], plotTitles[i], None, outputPrefix)
         i = i + 1
 
-def plot(resultsFile, toolName, childProcessFile):
+def plot(resultsFile, toolName, childProcessFile, outputPrefix):
     print 'Running for: %s\n' % toolName
     
     ELAPSED_TIME = []
@@ -209,7 +209,7 @@ def plot(resultsFile, toolName, childProcessFile):
         
         # save to file
         outFig = fig.get_figure()
-        outFigFileName = '%s_%s.png' % (resultsFile, plot)
+        outFigFileName = '%s_%s.png' % (outputPrefix, plot)
         outFig.savefig(outFigFileName)
         print 'Wrote to: %s' % outFigFileName
         del fig
@@ -221,11 +221,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Plotter for the Software Benchmarking Script')
     parser.add_argument('-f', help='Results file as input (CSV)')
     parser.add_argument('-t', help='Name of tool to appear in graph titles', default=None)
-    parser.add_argument('-c', help='File containing child spawning data (CSV)', default=None)
+    parser.add_argument('-c', help='[Broken!] File containing child spawning data (CSV)', default=None)
+    parser.add_argument('-o', help='Output prefix (directory and file name prefix). Default is input provided in -f flag', default=None)
     parser.add_argument('--wincntxmnu', help='Indicates SBS plotter was launched from the Windows context menu. See README for help.', action='store_true')
     args = parser.parse_args()
-
+    
+    # adjust outputPrefix
+    if args.o == None:
+        args.o = args.f
+        
     if args.wincntxmnu:
         args.t = raw_input('Enter the plot prefix: ')
     
-    main(args.f, args.t, args.c)
+    main(args.f, args.t, args.c, args.o)
