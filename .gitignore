@@ -99,3 +99,9 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+sbs-chain\.py
+
+do-not-commit/
+
+*.csv
